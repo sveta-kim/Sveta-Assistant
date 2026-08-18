@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 
+#include "character/CharacterState.h"
 #include "interaction/PettingDetector.h"
 #include "rendering/Sprite.h"
 
@@ -13,6 +14,7 @@ namespace sveta::window {
 // Borderless, always-on-top, per-pixel-transparent window that hosts the
 // character sprite. Phase 1: PNG rendering, drag, position save.
 // Phase 2: cursor tracking, head hitbox, petting detection.
+// Phase 3: emotion/action/personality state, idle behavior, sleep.
 class MainWindow {
 public:
     static std::unique_ptr<MainWindow> Create(HINSTANCE instance);
@@ -34,12 +36,14 @@ private:
     void SaveCurrentPosition();
     void HandleMouseMove(LPARAM lParam);
     void HandleMouseLeave();
+    void HandleTick();
 
     HWND hwnd_;
     std::optional<rendering::Sprite> sprite_;
     RECT headHitbox_{};
     bool isHovering_ = false;
     interaction::PettingDetector pettingDetector_;
+    character::CharacterState characterState_;
 };
 
 } // namespace sveta::window

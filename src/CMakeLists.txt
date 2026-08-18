@@ -1,5 +1,10 @@
 add_executable(SvetaAssistant WIN32
     app/main.cpp
+    behavior/IdleBehavior.cpp
+    character/Action.cpp
+    character/CharacterState.cpp
+    character/Emotion.cpp
+    character/Personality.cpp
     core/Logger.cpp
     core/Paths.cpp
     interaction/HeadHitbox.cpp

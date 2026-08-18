@@ -20,6 +20,9 @@ constexpr int kScreenMargin = 40;
 // downscaled to fit, never upscaled.
 constexpr uint32_t kMaxCharacterDimension = 240;
 
+constexpr UINT_PTR kCharacterTickTimerId = 1;
+constexpr UINT kCharacterTickIntervalMs = 1000;
+
 // TODO(Phase 9 - Item System / Content Platform): replace with the real
 // character package loader (character.json -> assets/). SVETA_CONTENT_DIR
 // points at the repo's content/ directory for local development only.
@@ -83,6 +86,7 @@ std::unique_ptr<MainWindow> MainWindow::Create(HINSTANCE instance) {
     window->ApplySpriteToWindow();
 
     ShowWindow(hwnd, SW_SHOW);
+    SetTimer(hwnd, kCharacterTickTimerId, kCharacterTickIntervalMs, nullptr);
 
     core::Logger::Info("Main window created");
     return window;
@@ -158,9 +162,12 @@ void MainWindow::SaveCurrentPosition() {
 }
 
 void MainWindow::HandleMouseMove(LPARAM lParam) {
+    const auto now = std::chrono::steady_clock::now();
+
     if (!isHovering_) {
         isHovering_ = true;
         core::Logger::Info("CharacterHovered");
+        characterState_.OnHoverStart(now);
 
         TRACKMOUSEEVENT tme{};
         tme.cbSize = sizeof(tme);
@@ -171,8 +178,9 @@ void MainWindow::HandleMouseMove(LPARAM lParam) {
 
     const POINT localPos{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
     if (PtInRect(&headHitbox_, localPos)) {
-        if (pettingDetector_.OnCursorMove(localPos, std::chrono::steady_clock::now())) {
+        if (pettingDetector_.OnCursorMove(localPos, now)) {
             core::Logger::Info("CharacterPetted");
+            characterState_.OnPetted(now);
         }
     } else {
         pettingDetector_.Reset();
@@ -182,7 +190,12 @@ void MainWindow::HandleMouseMove(LPARAM lParam) {
 void MainWindow::HandleMouseLeave() {
     isHovering_ = false;
     pettingDetector_.Reset();
+    characterState_.OnHoverEnd();
     core::Logger::Info("Character hover ended");
+}
+
+void MainWindow::HandleTick() {
+    characterState_.Tick(std::chrono::steady_clock::now(), isHovering_);
 }
 
 int MainWindow::RunMessageLoop() {
@@ -216,7 +229,21 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         case WM_MOUSELEAVE:
             HandleMouseLeave();
             return 0;
+        case WM_ENTERSIZEMOVE:
+            // Fired by the caption-move loop the WM_LBUTTONDOWN trick enters.
+            characterState_.OnDragStart(std::chrono::steady_clock::now());
+            return 0;
+        case WM_EXITSIZEMOVE:
+            characterState_.OnDragEnd(std::chrono::steady_clock::now(), isHovering_);
+            SaveCurrentPosition();
+            return 0;
+        case WM_TIMER:
+            if (wParam == kCharacterTickTimerId) {
+                HandleTick();
+            }
+            return 0;
         case WM_DESTROY:
+            KillTimer(hwnd_, kCharacterTickTimerId);
             SaveCurrentPosition();
             core::Logger::Info("Main window destroyed");
             PostQuitMessage(0);
