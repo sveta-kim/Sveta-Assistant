@@ -12,7 +12,9 @@ namespace sveta::rendering {
 // when blending with AC_SRC_ALPHA.
 class Sprite {
 public:
-    static std::optional<Sprite> LoadFromFile(const std::filesystem::path& path);
+    // maxDimension caps the longer side, preserving aspect ratio; 0 means
+    // "use the source image's native size". Never upscales.
+    static std::optional<Sprite> LoadFromFile(const std::filesystem::path& path, uint32_t maxDimension = 0);
 
     uint32_t Width() const { return width_; }
     uint32_t Height() const { return height_; }

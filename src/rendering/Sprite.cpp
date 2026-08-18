@@ -6,6 +6,8 @@
 
 #include <format>
 
+#include <algorithm>
+
 #include "core/Logger.h"
 
 using Microsoft::WRL::ComPtr;
@@ -37,7 +39,7 @@ private:
 Sprite::Sprite(uint32_t width, uint32_t height, std::vector<uint8_t> pixels)
     : width_(width), height_(height), pixels_(std::move(pixels)) {}
 
-std::optional<Sprite> Sprite::LoadFromFile(const std::filesystem::path& path) {
+std::optional<Sprite> Sprite::LoadFromFile(const std::filesystem::path& path, uint32_t maxDimension) {
     ComScope comScope;
 
     ComPtr<IWICImagingFactory> factory;
@@ -62,6 +64,34 @@ std::optional<Sprite> Sprite::LoadFromFile(const std::filesystem::path& path) {
         return std::nullopt;
     }
 
+    ComPtr<IWICBitmapSource> source = frame;
+
+    UINT sourceWidth = 0;
+    UINT sourceHeight = 0;
+    hr = frame->GetSize(&sourceWidth, &sourceHeight);
+    if (FAILED(hr) || sourceWidth == 0 || sourceHeight == 0) {
+        core::Logger::Error(std::format("Sprite '{}' has invalid size", path.string()));
+        return std::nullopt;
+    }
+
+    const UINT longerSide = std::max(sourceWidth, sourceHeight);
+    if (maxDimension > 0 && longerSide > maxDimension) {
+        const double scale = static_cast<double>(maxDimension) / static_cast<double>(longerSide);
+        const UINT scaledWidth = std::max(1u, static_cast<UINT>(sourceWidth * scale + 0.5));
+        const UINT scaledHeight = std::max(1u, static_cast<UINT>(sourceHeight * scale + 0.5));
+
+        ComPtr<IWICBitmapScaler> scaler;
+        hr = factory->CreateBitmapScaler(&scaler);
+        if (SUCCEEDED(hr)) {
+            hr = scaler->Initialize(frame.Get(), scaledWidth, scaledHeight, WICBitmapInterpolationModeFant);
+        }
+        if (SUCCEEDED(hr)) {
+            source = scaler;
+        } else {
+            core::Logger::Warn(std::format("Failed to downscale sprite '{}'; using native size (hr=0x{:08X})", path.string(), static_cast<unsigned>(hr)));
+        }
+    }
+
     ComPtr<IWICFormatConverter> converter;
     hr = factory->CreateFormatConverter(&converter);
     if (FAILED(hr)) {
@@ -71,7 +101,7 @@ std::optional<Sprite> Sprite::LoadFromFile(const std::filesystem::path& path) {
 
     // 32bppPBGRA == premultiplied alpha, exactly what UpdateLayeredWindow needs.
     hr = converter->Initialize(
-        frame.Get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone,
+        source.Get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone,
         nullptr, 0.0, WICBitmapPaletteTypeCustom);
     if (FAILED(hr)) {
         core::Logger::Error(std::format("Failed to convert sprite '{}' to BGRA (hr=0x{:08X})", path.string(), static_cast<unsigned>(hr)));

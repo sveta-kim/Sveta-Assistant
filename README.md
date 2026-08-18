@@ -5,14 +5,30 @@ Windows Desktop AI Companion / Interactive Character Platform.
 
 ## 진행 상황
 
-Phase 0(Foundation)과 Phase 1(Desktop Character) 완료: 테두리 없음,
-항상 위, 픽셀 단위로 투명한 창에 PNG 스프라이트를 (WIC로 디코딩해)
-렌더링하고, 드래그로 이동할 수 있으며, 위치는
-`%LOCALAPPDATA%\SvetaAssistant\`에 저장된다.
+Phase 0(Foundation), Phase 1(Desktop Character), Phase 2(Interaction)
+완료:
 
-`content/characters/sveta/assets/calm.png`의 스프라이트는 플레이스홀더다
-(실제 캐릭터 아트 아님, 단순 도형) — 실제 아트가 나오면 같은 경로에
-교체하면 된다. 다음은 Phase 2(커서 트래킹, 히트박스, 쓰다듬기 감지).
+- 테두리 없음, 항상 위, 픽셀 단위로 투명한 창에 PNG 스프라이트를
+  (WIC로 디코딩해) 렌더링
+- 원본 아트가 클 경우 화면에 보일 최대 크기(240px)로 자동 축소 —
+  실제 `calm.png`(1254×1254)도 이 크기로 줄여서 표시
+- 드래그로 이동, 위치는 `%LOCALAPPDATA%\SvetaAssistant\`에 저장
+- 커서가 캐릭터 위에 들어오고 나가는 것 추적(Hover/Leave) — 레이어드
+  창의 알파 채널 기반 히트테스트 덕분에 실루엣 바깥은 클릭도
+  자연스럽게 통과됨
+- 머리(헬멧) 영역에 비례 기반 히트박스 계산 (`interaction/HeadHitbox`)
+- 히트박스 안에서 좌우로 반복 스와이프하면 쓰다듬기로 인식
+  (`interaction/PettingDetector`) — 적당한 속도, 짧은 시간 내 방향
+  전환 3회 이상 조건 (기획서 8장 규칙)
+
+지금은 감지된 이벤트를 로그로만 남긴다(`CharacterHovered`,
+`CharacterPetted`) — Emotion/Action 시스템이 아직 없어서 캐릭터가
+실제로 반응하지는 않는다. 다음은 Phase 3(Character Life: 감정, 행동,
+성격, Idle Behavior).
+
+머리 히트박스는 현재 스프라이트 크기에 비례한 근사치(상단 50%,
+가운데 72% 너비)다. 캐릭터마다 다른 정확한 히트박스는 추후
+Character Package(character.json, 기획서 24~25장)에서 다룰 예정.
 
 남은 과제: 아직 DPI 인식 매니페스트가 없어서, 앱 자신이 보는 창 좌표와
 DPI를 인식하는 외부 도구가 보는 좌표가 다를 수 있다. 앱 자체의

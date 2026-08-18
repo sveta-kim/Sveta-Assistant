@@ -2,6 +2,8 @@ add_executable(SvetaAssistant WIN32
     app/main.cpp
     core/Logger.cpp
     core/Paths.cpp
+    interaction/HeadHitbox.cpp
+    interaction/PettingDetector.cpp
     rendering/Sprite.cpp
     window/MainWindow.cpp
     window/WindowPosition.cpp

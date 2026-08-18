@@ -1,9 +1,13 @@
 #include "window/MainWindow.h"
 
+#include <windowsx.h>
+
+#include <chrono>
 #include <filesystem>
 #include <format>
 
 #include "core/Logger.h"
+#include "interaction/HeadHitbox.h"
 #include "window/WindowPosition.h"
 
 namespace sveta::window {
@@ -12,6 +16,9 @@ namespace {
 constexpr wchar_t kWindowClassName[] = L"SvetaAssistantWindowClass";
 constexpr int kFallbackSize = 300;
 constexpr int kScreenMargin = 40;
+// On-screen size cap for character art; source art (e.g. 1254x1254) is
+// downscaled to fit, never upscaled.
+constexpr uint32_t kMaxCharacterDimension = 240;
 
 // TODO(Phase 9 - Item System / Content Platform): replace with the real
 // character package loader (character.json -> assets/). SVETA_CONTENT_DIR
@@ -46,7 +53,7 @@ std::unique_ptr<MainWindow> MainWindow::Create(HINSTANCE instance) {
         return nullptr;
     }
 
-    auto sprite = rendering::Sprite::LoadFromFile(DefaultSpritePath());
+    auto sprite = rendering::Sprite::LoadFromFile(DefaultSpritePath(), kMaxCharacterDimension);
     if (!sprite) {
         core::Logger::Warn("No character sprite loaded; falling back to a blank placeholder window");
     }
@@ -83,6 +90,9 @@ std::unique_ptr<MainWindow> MainWindow::Create(HINSTANCE instance) {
 
 MainWindow::MainWindow(HWND hwnd, std::optional<rendering::Sprite> sprite)
     : hwnd_(hwnd), sprite_(std::move(sprite)) {
+    if (sprite_) {
+        headHitbox_ = interaction::ComputeHeadHitbox(sprite_->Width(), sprite_->Height());
+    }
     SetWindowLongPtrW(hwnd_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
 }
 
@@ -147,6 +157,34 @@ void MainWindow::SaveCurrentPosition() {
     }
 }
 
+void MainWindow::HandleMouseMove(LPARAM lParam) {
+    if (!isHovering_) {
+        isHovering_ = true;
+        core::Logger::Info("CharacterHovered");
+
+        TRACKMOUSEEVENT tme{};
+        tme.cbSize = sizeof(tme);
+        tme.dwFlags = TME_LEAVE;
+        tme.hwndTrack = hwnd_;
+        TrackMouseEvent(&tme);
+    }
+
+    const POINT localPos{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+    if (PtInRect(&headHitbox_, localPos)) {
+        if (pettingDetector_.OnCursorMove(localPos, std::chrono::steady_clock::now())) {
+            core::Logger::Info("CharacterPetted");
+        }
+    } else {
+        pettingDetector_.Reset();
+    }
+}
+
+void MainWindow::HandleMouseLeave() {
+    isHovering_ = false;
+    pettingDetector_.Reset();
+    core::Logger::Info("Character hover ended");
+}
+
 int MainWindow::RunMessageLoop() {
     MSG msg{};
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
@@ -171,6 +209,12 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             // it as if the user grabbed a title bar (there is none).
             ReleaseCapture();
             SendMessageW(hwnd_, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+            return 0;
+        case WM_MOUSEMOVE:
+            HandleMouseMove(lParam);
+            return 0;
+        case WM_MOUSELEAVE:
+            HandleMouseLeave();
             return 0;
         case WM_DESTROY:
             SaveCurrentPosition();
