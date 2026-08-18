@@ -3,12 +3,14 @@
 #include <windows.h>
 
 #include <memory>
+#include <optional>
+
+#include "rendering/Sprite.h"
 
 namespace sveta::window {
 
-// Borderless, always-on-top, layered window that will host the character.
-// Phase 0/1 scope only: window creation + message loop.
-// PNG sprite rendering (Phase 1 continuation) is not implemented yet.
+// Borderless, always-on-top, per-pixel-transparent window that hosts the
+// character sprite. Phase 1 scope: PNG rendering, drag, position save.
 class MainWindow {
 public:
     static std::unique_ptr<MainWindow> Create(HINSTANCE instance);
@@ -21,12 +23,16 @@ public:
     int RunMessageLoop();
 
 private:
-    explicit MainWindow(HWND hwnd);
+    MainWindow(HWND hwnd, std::optional<rendering::Sprite> sprite);
 
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
     LRESULT HandleMessage(UINT message, WPARAM wParam, LPARAM lParam);
 
+    void ApplySpriteToWindow();
+    void SaveCurrentPosition();
+
     HWND hwnd_;
+    std::optional<rendering::Sprite> sprite_;
 };
 
 } // namespace sveta::window

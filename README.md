@@ -5,9 +5,19 @@ Full plan: `docs/Sveta_Assistant_Integrated_Project_Plan.docx`.
 
 ## Status
 
-Phase 0 (Foundation) scaffolding. Builds a borderless, topmost, layered
-window with no rendering yet — proves the toolchain and project structure
-before Phase 1 (character rendering, drag, cursor tracking, petting).
+Phase 0 (Foundation) and Phase 1 (Desktop Character) done: borderless,
+topmost, per-pixel-transparent window rendering a PNG sprite (via WIC),
+draggable, with position persisted to `%LOCALAPPDATA%\SvetaAssistant\`.
+
+The sprite at `content/characters/sveta/assets/calm.png` is a placeholder
+(plain shape, no real character art) — swap it for real art at the same
+path once available. Next up: Phase 2 (cursor tracking, hitboxes,
+petting detection).
+
+Known follow-up: the app has no DPI-awareness manifest yet, so its own
+view of window coordinates can diverge from what DPI-aware external
+tools report. Doesn't affect the app's own save/restore round-trip;
+worth fixing before Phase 13 polish.
 
 ## Prerequisites
 
@@ -16,8 +26,7 @@ before Phase 1 (character rendering, drag, cursor tracking, petting).
 - CMake 3.28+
 - Git
 
-Neither Visual Studio nor CMake is currently installed on this machine —
-install both before the first build.
+Both are installed on this machine (VS 2026 Community, CMake 4.4.2).
 
 ## Build
 
@@ -34,9 +43,9 @@ CMake integration.
 ```
 src/
   app/          entry point (WinMain)
-  core/         logging, shared utilities
-  window/       Win32 window management
-  rendering/    Direct2D/Direct3D character rendering (Phase 1+)
+  core/         logging, filesystem paths, shared utilities
+  window/       Win32 window management, drag, position persistence
+  rendering/    PNG sprite loading (WIC); Direct2D/Direct3D land later
   character/    character state (emotion, action, personality)
   behavior/     idle/behavior selection logic
   interaction/  mouse interaction, petting, hitboxes

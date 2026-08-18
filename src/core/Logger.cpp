@@ -8,18 +8,14 @@
 #include <fstream>
 #include <mutex>
 
+#include "core/Paths.h"
+
 namespace sveta::core {
 
 namespace {
 
 std::filesystem::path LogFilePath() {
-    wchar_t* localAppData = nullptr;
-    size_t len = 0;
-    _wdupenv_s(&localAppData, &len, L"LOCALAPPDATA");
-    std::filesystem::path base = localAppData ? std::filesystem::path(localAppData) : std::filesystem::temp_directory_path();
-    free(localAppData);
-
-    std::filesystem::path dir = base / L"SvetaAssistant" / L"logs";
+    std::filesystem::path dir = LocalAppDataDir() / L"logs";
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
     return dir / L"sveta.log";
