@@ -25,18 +25,20 @@ bool PettingDetector::OnCursorMove(POINT position, std::chrono::steady_clock::ti
         if (dtSeconds > 0.0 && dx != 0) {
             const double speed = std::abs(dx) / dtSeconds;
 
-            if (speed > kMaxSpeedPxPerSec) {
-                // Too fast to be a deliberate stroke: treat as a fresh start.
-                reversalTimes_.clear();
-                lastDirection_ = Direction::None;
-            } else if (speed >= kMinSpeedPxPerSec) {
+            // Outside the moderate-speed window, just ignore this sample —
+            // don't touch lastDirection_ or reversalTimes_. Real mice fire
+            // WM_MOUSEMOVE at high frequency, and Windows coalesces bursts
+            // of them under load, so a single jittery too-fast sample is
+            // normal noise, not proof the whole stroke wasn't deliberate.
+            // Punishing it by clearing progress made genuine petting fail
+            // unpredictably depending on message-timing luck.
+            if (speed >= kMinSpeedPxPerSec && speed <= kMaxSpeedPxPerSec) {
                 const Direction direction = dx > 0 ? Direction::Right : Direction::Left;
                 if (lastDirection_ != Direction::None && direction != lastDirection_) {
                     reversalTimes_.push_back(now);
                 }
                 lastDirection_ = direction;
             }
-            // Too slow: a brief pause mid-stroke shouldn't cancel the gesture.
         }
     }
 
