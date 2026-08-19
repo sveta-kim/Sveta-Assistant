@@ -5,6 +5,7 @@
 #include <chrono>
 #include <filesystem>
 #include <format>
+#include <string>
 
 #include "core/Logger.h"
 #include "interaction/HeadHitbox.h"
@@ -26,8 +27,9 @@ constexpr UINT kCharacterTickIntervalMs = 1000;
 // TODO(Phase 9 - Item System / Content Platform): replace with the real
 // character package loader (character.json -> assets/). SVETA_CONTENT_DIR
 // points at the repo's content/ directory for local development only.
-std::filesystem::path DefaultSpritePath() {
-    return std::filesystem::path(SVETA_CONTENT_DIR) / L"characters" / L"sveta" / L"assets" / L"calm.png";
+std::filesystem::path SpritePathForEmotion(character::Emotion emotion) {
+    const std::string fileName(character::SpriteFileName(emotion));
+    return std::filesystem::path(SVETA_CONTENT_DIR) / L"characters" / L"sveta" / L"assets" / fileName;
 }
 
 POINT DefaultPosition(int width, int height) {
@@ -56,7 +58,7 @@ std::unique_ptr<MainWindow> MainWindow::Create(HINSTANCE instance) {
         return nullptr;
     }
 
-    auto sprite = rendering::Sprite::LoadFromFile(DefaultSpritePath(), kMaxCharacterDimension);
+    auto sprite = rendering::Sprite::LoadFromFile(SpritePathForEmotion(character::Emotion::Calm), kMaxCharacterDimension);
     if (!sprite) {
         core::Logger::Warn("No character sprite loaded; falling back to a blank placeholder window");
     }
@@ -154,6 +156,30 @@ void MainWindow::ApplySpriteToWindow() {
     ReleaseDC(nullptr, screenDc);
 }
 
+void MainWindow::ReloadSpriteForEmotion(character::Emotion emotion) {
+    auto sprite = rendering::Sprite::LoadFromFile(SpritePathForEmotion(emotion), kMaxCharacterDimension);
+    if (!sprite) {
+        core::Logger::Warn(std::format("No sprite for emotion {}; falling back to calm", character::ToString(emotion)));
+        sprite = rendering::Sprite::LoadFromFile(SpritePathForEmotion(character::Emotion::Calm), kMaxCharacterDimension);
+    }
+    if (!sprite) {
+        return; // keep whatever is currently displayed
+    }
+
+    sprite_ = std::move(sprite);
+    headHitbox_ = interaction::ComputeHeadHitbox(sprite_->Width(), sprite_->Height());
+    ApplySpriteToWindow();
+}
+
+void MainWindow::SyncSpriteToEmotion() {
+    const character::Emotion emotion = characterState_.CurrentEmotion();
+    if (emotion == lastAppliedEmotion_) {
+        return;
+    }
+    lastAppliedEmotion_ = emotion;
+    ReloadSpriteForEmotion(emotion);
+}
+
 void MainWindow::SaveCurrentPosition() {
     RECT rect{};
     if (GetWindowRect(hwnd_, &rect)) {
@@ -185,6 +211,8 @@ void MainWindow::HandleMouseMove(LPARAM lParam) {
     } else {
         pettingDetector_.Reset();
     }
+
+    SyncSpriteToEmotion();
 }
 
 void MainWindow::HandleMouseLeave() {
@@ -192,10 +220,12 @@ void MainWindow::HandleMouseLeave() {
     pettingDetector_.Reset();
     characterState_.OnHoverEnd();
     core::Logger::Info("Character hover ended");
+    SyncSpriteToEmotion();
 }
 
 void MainWindow::HandleTick() {
     characterState_.Tick(std::chrono::steady_clock::now(), isHovering_);
+    SyncSpriteToEmotion();
 }
 
 int MainWindow::RunMessageLoop() {
@@ -232,9 +262,11 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         case WM_ENTERSIZEMOVE:
             // Fired by the caption-move loop the WM_LBUTTONDOWN trick enters.
             characterState_.OnDragStart(std::chrono::steady_clock::now());
+            SyncSpriteToEmotion();
             return 0;
         case WM_EXITSIZEMOVE:
             characterState_.OnDragEnd(std::chrono::steady_clock::now(), isHovering_);
+            SyncSpriteToEmotion();
             SaveCurrentPosition();
             return 0;
         case WM_TIMER:

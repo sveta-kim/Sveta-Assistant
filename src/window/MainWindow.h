@@ -37,6 +37,8 @@ private:
     void HandleMouseMove(LPARAM lParam);
     void HandleMouseLeave();
     void HandleTick();
+    void SyncSpriteToEmotion();
+    void ReloadSpriteForEmotion(character::Emotion emotion);
 
     HWND hwnd_;
     std::optional<rendering::Sprite> sprite_;
@@ -44,6 +46,7 @@ private:
     bool isHovering_ = false;
     interaction::PettingDetector pettingDetector_;
     character::CharacterState characterState_;
+    character::Emotion lastAppliedEmotion_ = character::Emotion::Calm;
 };
 
 } // namespace sveta::window

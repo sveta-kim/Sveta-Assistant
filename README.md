@@ -36,12 +36,20 @@ Phase 3(Character Life) 완료:
     13장) — Playfulness가 높을수록 Move/PlayWithItem이, Curiosity가
     높을수록 LookAround가 더 잘 나옴
 
-지금은 실제 그림(에셋)이 `calm.png` 하나뿐이라 감정/행동이 바뀌어도
-겉모습은 그대로다 — 상태 전이는 전부 로그(`sveta.log`)로 관찰 가능하고
-직접 확인도 했지만(호버/쓰다듬기/드래그/Sleep/기상/Idle 전부), 감정별
-스프라이트(happy.png 등, 기획서 14장 "초기: PNG Sprite 기반")가 없어
-시각적으로는 아직 안 드러난다. 다음은 Phase 4(AI Conversation)나 감정별
-스프라이트 추가 중 선택.
+감정별 스프라이트도 추가했다. 실제 원화가 `calm.png` 하나뿐이라
+happy/excited/curious/sad/annoyed/embarrassed/sleepy/concerned/
+surprised는 전부 `calm.png` 위에 절차적으로 오버레이(블러시, 눈물,
+땀방울, 반짝임, Z, ?, !, 화남 표시)를 합성해서 만들었다 — 새 원화는
+아니지만 감정이 눈으로 구분된다. `character/Emotion::SpriteFileName()`이
+파일명을 매핑하고, `MainWindow::SyncSpriteToEmotion()`이 매 틱/이벤트마다
+`CharacterState`의 현재 감정과 마지막으로 반영한 감정을 비교해 바뀌었을
+때만 다시 로드한다(파일이 없으면 calm.png로 폴백). Hover→Curious("?"),
+쓰다듬기→Happy(블러시+별), 드래그→Surprised("!"), 방치→Sleepy(Z)까지
+실제로 화면 캡처로 확인했다.
+
+오버레이 생성 스크립트는 `tools/generate_emotion_sprites.py`(Python +
+Pillow)에 있다. `calm.png`가 바뀌거나 아이콘 위치/색을 조정하고 싶으면
+이 스크립트를 고쳐서 다시 실행하면 된다. 다음은 Phase 4(AI Conversation).
 
 머리 히트박스는 현재 스프라이트 크기에 비례한 근사치(상단 50%,
 가운데 72% 너비)다. 캐릭터마다 다른 정확한 히트박스는 추후
@@ -92,6 +100,7 @@ content/        캐릭터 및 아이템 패키지 (코드 아닌 데이터)
 assets/         공용 에셋
 config/         런타임 설정
 tests/          테스트
+tools/          에셋 생성 등 개발용 스크립트 (빌드에 포함 안 됨)
 ```
 
 이 구조를 정한 근거는 기획서 47장, 전체 Phase 로드맵(Phase 0~13)은
