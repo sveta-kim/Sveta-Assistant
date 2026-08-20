@@ -9,6 +9,7 @@
 
 #include "ai/AiConfig.h"
 #include "ai/ChatClient.h"
+#include "audio/TextToSpeech.h"
 #include "character/CharacterState.h"
 #include "interaction/PettingDetector.h"
 #include "rendering/Sprite.h"
@@ -22,6 +23,8 @@ namespace sveta::window {
 // Phase 3: emotion/action/personality state, idle behavior, sleep.
 // Phase 4: text chat with an AI backend (speech bubble, background
 // network worker thread).
+// Phase 5: TTS speech for AI replies, with a lightweight talking
+// indicator in place of real mouth animation (see rendering/SpriteOverlay).
 class MainWindow {
 public:
     static std::unique_ptr<MainWindow> Create(HINSTANCE instance);
@@ -51,10 +54,13 @@ private:
     LRESULT HandleMessage(UINT message, WPARAM wParam, LPARAM lParam);
 
     void ApplySpriteToWindow();
+    void ApplyPixelsToWindow(const std::vector<uint8_t>& pixels, uint32_t width, uint32_t height);
     void SaveCurrentPosition();
     void HandleMouseMove(LPARAM lParam);
     void HandleMouseLeave();
     void HandleTick();
+    void HandleMouthAnimationTick();
+    void HandleTtsEvent();
     void SyncSpriteToEmotion();
     void ReloadSpriteForEmotion(character::Emotion emotion);
 
@@ -76,6 +82,14 @@ private:
     std::optional<ai::AiConfig> aiConfig_;
     std::vector<ai::ChatMessage> conversationHistory_;
     bool conversationInFlight_ = false;
+
+    std::unique_ptr<audio::TextToSpeech> textToSpeech_;
+    bool isSpeaking_ = false;
+    bool mouthFrameToggle_ = false;
+    // True from the moment a response bubble starts speaking until either
+    // the real "speech ended" event reschedules the bubble's dismiss timer
+    // or something else (a new message, a manual dismiss) pre-empts it.
+    bool awaitingSpeechEndForDismiss_ = false;
 };
 
 } // namespace sveta::window

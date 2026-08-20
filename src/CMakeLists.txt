@@ -3,6 +3,8 @@ add_executable(SvetaAssistant WIN32
     ai/ChatClient.cpp
     ai/Persona.cpp
     app/main.cpp
+    audio/SpeakableText.cpp
+    audio/TextToSpeech.cpp
     behavior/IdleBehavior.cpp
     character/Action.cpp
     character/CharacterState.cpp
@@ -14,6 +16,7 @@ add_executable(SvetaAssistant WIN32
     interaction/HeadHitbox.cpp
     interaction/PettingDetector.cpp
     rendering/Sprite.cpp
+    rendering/SpriteOverlay.cpp
     window/ChatBubble.cpp
     window/MainWindow.cpp
     window/WindowPosition.cpp

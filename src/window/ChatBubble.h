@@ -37,6 +37,16 @@ public:
     void Hide();
     bool IsVisible() const;
 
+    // Keeps the bubble anchored to the character while it's being dragged;
+    // no-op if the bubble is hidden. Content/size are unchanged.
+    void Reposition(POINT anchorTop);
+
+    // Replaces the pending auto-dismiss timer with a fresh one. Used once
+    // real TTS playback actually finishes, since the timer ShowResponse
+    // starts is only a text-length guess and can fire well before or long
+    // after speech really ends.
+    void RescheduleDismiss(int delayMs, DismissCallback onDismiss);
+
 private:
     ChatBubble(HWND hwnd, HWND edit, HFONT editFont, HBRUSH editBackgroundBrush);
 

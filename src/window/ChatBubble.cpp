@@ -318,7 +318,12 @@ void ChatBubble::ShowResponse(POINT anchorTop, const std::wstring& text, Dismiss
     EnterStaticMode(anchorTop, text);
     ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
 
-    const int durationMs = std::clamp(static_cast<int>(text.size()) * 60 + 2000, 3000, 15000);
+    // A text-length guess used as a safety net in case nothing later calls
+    // RescheduleDismiss (e.g. TTS is unavailable/disabled). When TTS does
+    // speak the reply, MainWindow overrides this via RescheduleDismiss
+    // once the real "speech ended" event arrives, since actual reading
+    // time can run well past this estimate for long replies.
+    const int durationMs = std::clamp(static_cast<int>(text.size()) * 100 + 2000, 3000, 45000);
     SetTimer(hwnd_, kAutoDismissTimerId, static_cast<UINT>(durationMs), nullptr);
 }
 
@@ -329,6 +334,24 @@ void ChatBubble::Hide() {
 
 bool ChatBubble::IsVisible() const {
     return IsWindowVisible(hwnd_);
+}
+
+void ChatBubble::Reposition(POINT anchorTop) {
+    if (!IsWindowVisible(hwnd_)) {
+        return;
+    }
+    RECT rect{};
+    GetWindowRect(hwnd_, &rect);
+    const int w = rect.right - rect.left;
+    const int h = rect.bottom - rect.top;
+    const int x = anchorTop.x - w / 2;
+    const int y = anchorTop.y - h - kGapAboveAnchor;
+    SetWindowPos(hwnd_, nullptr, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+void ChatBubble::RescheduleDismiss(int delayMs, DismissCallback onDismiss) {
+    onDismiss_ = std::move(onDismiss);
+    SetTimer(hwnd_, kAutoDismissTimerId, static_cast<UINT>(delayMs), nullptr);
 }
 
 void ChatBubble::HandleEditReturn() {

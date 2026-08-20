@@ -6,7 +6,8 @@ Windows Desktop AI Companion / Interactive Character Platform.
 ## 진행 상황
 
 Phase 0(Foundation), Phase 1(Desktop Character), Phase 2(Interaction),
-Phase 3(Character Life), Phase 4(AI Conversation) 완료:
+Phase 3(Character Life), Phase 4(AI Conversation), Phase 5(Voice — TTS만,
+아래 참고) 완료:
 
 - 테두리 없음, 항상 위, 픽셀 단위로 투명한 창에 PNG 스프라이트를
   (WIC로 디코딩해) 렌더링
@@ -83,7 +84,53 @@ GDI+로 직접 그리므로 이 제약이 없다. GDI+ 폰트 서브시스템은
 최초 1회 초기화가 느려서(이 환경에서 ~5초, 이후 매번 ~4ms) 앱 시작 시
 백그라운드 스레드에서 미리 예열해둔다.
 
-다음은 Phase 5(Voice)나 Phase 6(Desktop Context) 중 선택.
+**음성(TTS)**도 붙었다 (기획서 21장 Voice System). STT/Push-to-Talk는
+이번엔 뺐다 — 이 개발 머신엔 한국어/영어 음성 인식 엔진이 설치되어
+있지 않고(TTS 목소리는 있는데 인식 모델이 없음, Windows 언어팩 설치가
+필요), 독일어로만 검증 가능해서 실사용 언어로 끝까지 확인할 수 없었기
+때문이다. TTS/입 애니메이션까지만 먼저 끝내기로 함.
+
+- `audio/TextToSpeech`가 SAPI(`ISpVoice`)로 AI 응답을 읽는다. 텍스트에
+  한글이 섞여 있으면 자동으로 한국어 음성(Microsoft Heami)을 고른다
+  (캐릭터별 Voice Profile은 아직 없어서 언어 감지로 대체 — 기획서
+  21/25장)
+- SAPI 자체의 비동기 재생 + 알림 메시지(`SetNotifyWindowMessage`)를
+  쓰기 때문에 재생용 스레드를 따로 만들 필요가 없다
+- **입 애니메이션**은 레이어를 분리한 진짜 마우스 아트가 아직 없어서
+  (기획서 14장 "중기" 단계 예정) 말하는 동안 얼굴 근처에 작은
+  사운드바(막대 3개)가 깜빡이는 것으로 대체했다 — 실제 구현은
+  `rendering::WithTalkingIndicator`가 매 180ms마다 현재 스프라이트
+  복사본에 GDI+로 막대를 합성해서 보여준다
+  - 여기서 실제 버그 하나 발견: GDI+ `Bitmap`이 **외부에서 감싼**
+    premultiplied 메모리에 직접 `FillRectangle`을 그리면 아무것도
+    그려지지 않는다(에러도 없이 조용히 무시됨). 별도의
+    GDI+ 소유 비트맵에 그린 뒤 `LockBits`로 읽어서 수동으로
+    알파 합성하는 방식으로 고쳤다
+- 시작/종료 이벤트로 실제 TTS 재생 시간에 맞춰 사운드바가 뜨고 사라지는
+  것까지 실제 API 응답으로 화면 캡처해서 확인했다
+
+**사용해보고 나온 버그 세 개도 고쳤다:**
+
+- **마크다운/이모지를 그대로 읽던 문제**: `audio/SpeakableText::MakeSpeakable()`가
+  TTS로 보내기 직전에만 `**굵게**`, `` `코드` ``, `# 제목`, `[링크](url)`,
+  이모지/기호(정규식 + 서로게이트 쌍 기반)를 제거한다. 말풍선에 보이는
+  텍스트는 원문 그대로 — 실제 응답으로 "**좋아!** ... 😊"가
+  "좋아! ..."로만 읽히는 것 확인
+- **드래그 중 말풍선이 안 따라오던 문제**: 캐릭터 창이 움직여도 말풍선
+  위치를 갱신하는 코드가 아예 없었다. `WM_MOVE`(캡션 드래그 루프 중에도
+  계속 발생함)에서 `ChatBubble::Reposition()`을 호출하도록 추가 —
+  캐릭터를 (-150,-100)만큼 옮기면 말풍선도 정확히 같은 만큼 따라가는 것
+  확인
+- **긴 대사 도중 말풍선이 먼저 사라지던 문제**: 기존엔 글자 수로 유지
+  시간을 "추측"해서 최대 15초로 캡을 걸었는데, 실제 TTS는 21~45초까지도
+  걸렸다. 이제 그 추측 타이머는 TTS를 못 쓸 때만 쓰는 안전장치(45초 캡)로
+  남기고, 실제 발화 종료 이벤트가 오면 `ChatBubble::RescheduleDismiss()`로
+  타이머를 다시 걸어 짧은 유예 시간(2.5초) 뒤에 닫히게 했다 — 실제 45초짜리
+  응답으로 끝까지 떠 있다가 종료 이벤트 후 정확히 닫히는 것 확인. 새 메시지를
+  보내거나 수동으로 닫으면 읽던 음성도 즉시 끊는다
+
+다음은 Phase 6(Desktop Context)이나, 다른 머신에서 STT까지 마저 할지
+선택.
 
 머리 히트박스는 현재 스프라이트 크기에 비례한 근사치(상단 50%,
 가운데 72% 너비)다. 캐릭터마다 다른 정확한 히트박스는 추후
@@ -111,11 +158,14 @@ DPI를 인식하는 외부 도구가 보는 좌표가 다를 수 있다. 앱 자
 
 ```json
 // config/ai_config.json (커밋됨 — 민감 정보 없음)
-{ "endpoint": "https://factchat-cloud.mindlogic.ai/v1/gateway", "model": "실제 모델명으로 교체" }
+{ "endpoint": "https://factchat-cloud.mindlogic.ai/v1/gateway/chat/completions/", "model": "실제 모델명으로 교체" }
 
 // config/secrets.local.json (.gitignore 처리됨 — 직접 만들어서 채우기)
 { "api_key": "실제 키로 교체" }
 ```
+
+`endpoint`는 실제 completions 라우트까지 정확히 가리켜야 한다 —
+`/v1/gateway`만 쓰면 404가 나거나(게이트웨이마다 다름) 응답이 안 온다.
 
 ## 빌드
 
@@ -143,7 +193,7 @@ src/
   context/      데스크톱 인식, 화면 이해
   ai/           AI 엔진 연동 (대화, 비전)
   memory/       세션/일간/장기 기억
-  audio/        STT/TTS
+  audio/        TTS (SAPI); STT는 이 머신에 언어 인식 모델이 없어서 보류
 content/        캐릭터 및 아이템 패키지 (코드 아닌 데이터)
 assets/         공용 에셋
 config/         런타임 설정

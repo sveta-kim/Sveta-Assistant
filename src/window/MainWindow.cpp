@@ -9,9 +9,11 @@
 #include <thread>
 
 #include "ai/Persona.h"
+#include "audio/SpeakableText.h"
 #include "core/Logger.h"
 #include "core/StringConvert.h"
 #include "interaction/HeadHitbox.h"
+#include "rendering/SpriteOverlay.h"
 #include "window/WindowPosition.h"
 
 namespace sveta::window {
@@ -29,8 +31,19 @@ constexpr UINT kCharacterTickIntervalMs = 1000;
 
 // Posted by the AI worker thread with an AiResponsePayload* in lParam.
 constexpr UINT kAiResponseMessage = WM_APP + 1;
+// Posted by SAPI itself (see ISpVoice::SetNotifyWindowMessage) when speech
+// starts/ends; no payload, just a signal to call TextToSpeech::PumpEvents().
+constexpr UINT kTtsEventMessage = WM_APP + 2;
 
 constexpr size_t kMaxHistoryMessages = 20;
+
+constexpr UINT_PTR kMouthAnimationTimerId = 2;
+constexpr UINT kMouthAnimationIntervalMs = 180;
+
+// How long the response bubble lingers after real TTS playback actually
+// finishes (see MainWindow::HandleTtsEvent), so it doesn't vanish the
+// instant the voice stops.
+constexpr int kPostSpeechGraceMs = 2500;
 
 // TODO(Phase 9 - Item System / Content Platform): replace with the real
 // character package loader (character.json -> assets/). SVETA_CONTENT_DIR
@@ -101,6 +114,11 @@ std::unique_ptr<MainWindow> MainWindow::Create(HINSTANCE instance) {
         core::Logger::Warn("AI chat is not configured yet; double-click will show a placeholder reply");
     }
 
+    window->textToSpeech_ = audio::TextToSpeech::Create(hwnd, kTtsEventMessage);
+    if (!window->textToSpeech_) {
+        core::Logger::Warn("Text-to-speech unavailable; replies will be text-only");
+    }
+
     ShowWindow(hwnd, SW_SHOW);
     SetTimer(hwnd, kCharacterTickTimerId, kCharacterTickIntervalMs, nullptr);
 
@@ -129,7 +147,10 @@ void MainWindow::ApplySpriteToWindow() {
         SetLayeredWindowAttributes(hwnd_, 0, 255, LWA_ALPHA);
         return;
     }
+    ApplyPixelsToWindow(sprite_->PremultipliedBgra(), sprite_->Width(), sprite_->Height());
+}
 
+void MainWindow::ApplyPixelsToWindow(const std::vector<uint8_t>& pixels, uint32_t width, uint32_t height) {
     RECT windowRect{};
     GetWindowRect(hwnd_, &windowRect);
 
@@ -138,8 +159,8 @@ void MainWindow::ApplySpriteToWindow() {
 
     BITMAPINFO bmi{};
     bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bmi.bmiHeader.biWidth = static_cast<LONG>(sprite_->Width());
-    bmi.bmiHeader.biHeight = -static_cast<LONG>(sprite_->Height()); // top-down
+    bmi.bmiHeader.biWidth = static_cast<LONG>(width);
+    bmi.bmiHeader.biHeight = -static_cast<LONG>(height); // top-down
     bmi.bmiHeader.biPlanes = 1;
     bmi.bmiHeader.biBitCount = 32;
     bmi.bmiHeader.biCompression = BI_RGB;
@@ -147,13 +168,13 @@ void MainWindow::ApplySpriteToWindow() {
     void* bits = nullptr;
     const HBITMAP dib = CreateDIBSection(screenDc, &bmi, DIB_RGB_COLORS, &bits, nullptr, 0);
     if (dib && bits) {
-        memcpy(bits, sprite_->PremultipliedBgra().data(), sprite_->PremultipliedBgra().size());
+        memcpy(bits, pixels.data(), pixels.size());
 
         const HGDIOBJ oldBitmap = SelectObject(memDc, dib);
 
         POINT srcPoint{0, 0};
         POINT dstPoint{windowRect.left, windowRect.top};
-        SIZE size{static_cast<LONG>(sprite_->Width()), static_cast<LONG>(sprite_->Height())};
+        SIZE size{static_cast<LONG>(width), static_cast<LONG>(height)};
         BLENDFUNCTION blend{AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
 
         if (!UpdateLayeredWindow(hwnd_, screenDc, &dstPoint, &size, memDc, &srcPoint, 0, &blend, ULW_ALPHA)) {
@@ -260,6 +281,19 @@ void MainWindow::StartChat() {
 }
 
 void MainWindow::OnMessageSubmitted(const std::wstring& message) {
+    // A new message pre-empts whatever the previous reply was doing —
+    // stop it being read aloud and don't let a stale "speech ended" event
+    // reschedule dismissal on the bubble we're about to repurpose.
+    awaitingSpeechEndForDismiss_ = false;
+    if (textToSpeech_) {
+        textToSpeech_->Stop();
+    }
+    if (isSpeaking_) {
+        isSpeaking_ = false;
+        KillTimer(hwnd_, kMouthAnimationTimerId);
+        ApplySpriteToWindow();
+    }
+
     const auto now = std::chrono::steady_clock::now();
     characterState_.OnConversationStart(now);
     SyncSpriteToEmotion();
@@ -316,14 +350,72 @@ void MainWindow::OnAiResponse(const AiResponsePayload& payload) {
                 conversationHistory_.begin(),
                 conversationHistory_.begin() + (conversationHistory_.size() - kMaxHistoryMessages));
         }
+        if (textToSpeech_) {
+            core::Logger::Info("TTS: Speak() called");
+            // The bubble still shows payload.text as-is; only what's
+            // spoken gets Markdown/emoji stripped.
+            textToSpeech_->Speak(audio::MakeSpeakable(payload.text));
+            awaitingSpeechEndForDismiss_ = true;
+        }
     }
 
     chatBubble_->ShowResponse(ComputeBubbleAnchor(), payload.text, [this]() { OnChatDismissed(); });
 }
 
 void MainWindow::OnChatDismissed() {
+    // Dismissing the bubble (manually, or via its own timer) also cuts off
+    // any reply still being read, rather than leaving the voice going with
+    // nothing on screen to show for it.
+    awaitingSpeechEndForDismiss_ = false;
+    if (textToSpeech_) {
+        textToSpeech_->Stop();
+    }
+    if (isSpeaking_) {
+        isSpeaking_ = false;
+        KillTimer(hwnd_, kMouthAnimationTimerId);
+        ApplySpriteToWindow();
+    }
+
     characterState_.OnConversationEnd(isHovering_);
     SyncSpriteToEmotion();
+}
+
+void MainWindow::HandleTtsEvent() {
+    if (!textToSpeech_) {
+        return;
+    }
+    const audio::TextToSpeech::EventResult result = textToSpeech_->PumpEvents();
+    core::Logger::Info(std::format("TTS event: started={} ended={}", result.started, result.ended));
+
+    if (result.started && !isSpeaking_) {
+        isSpeaking_ = true;
+        mouthFrameToggle_ = false;
+        SetTimer(hwnd_, kMouthAnimationTimerId, kMouthAnimationIntervalMs, nullptr);
+    }
+    if (result.ended && isSpeaking_) {
+        isSpeaking_ = false;
+        KillTimer(hwnd_, kMouthAnimationTimerId);
+        ApplySpriteToWindow(); // restore the plain (non-indicator) frame
+
+        // Now that speech has genuinely finished, replace whatever guess
+        // ChatBubble::ShowResponse's own timer made with a short, precise
+        // grace period — long replies were disappearing mid-sentence
+        // before this, since that guess topped out well under real
+        // reading time.
+        if (awaitingSpeechEndForDismiss_ && chatBubble_) {
+            awaitingSpeechEndForDismiss_ = false;
+            chatBubble_->RescheduleDismiss(kPostSpeechGraceMs, [this]() { OnChatDismissed(); });
+        }
+    }
+}
+
+void MainWindow::HandleMouthAnimationTick() {
+    if (!sprite_) {
+        return;
+    }
+    mouthFrameToggle_ = !mouthFrameToggle_;
+    const std::vector<uint8_t> pixels = rendering::WithTalkingIndicator(*sprite_, mouthFrameToggle_);
+    ApplyPixelsToWindow(pixels, sprite_->Width(), sprite_->Height());
 }
 
 int MainWindow::RunMessageLoop() {
@@ -357,6 +449,14 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         case WM_MOUSELEAVE:
             HandleMouseLeave();
             return 0;
+        case WM_MOVE:
+            // Fires continuously during the caption-move drag loop too, so
+            // the bubble tracks the character in real time instead of
+            // being left behind.
+            if (chatBubble_ && chatBubble_->IsVisible()) {
+                chatBubble_->Reposition(ComputeBubbleAnchor());
+            }
+            return 0;
         case WM_LBUTTONDBLCLK:
             StartChat();
             return 0;
@@ -365,6 +465,9 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             OnAiResponse(*payload);
             return 0;
         }
+        case kTtsEventMessage:
+            HandleTtsEvent();
+            return 0;
         case WM_ENTERSIZEMOVE:
             // Fired by the caption-move loop the WM_LBUTTONDOWN trick enters.
             characterState_.OnDragStart(std::chrono::steady_clock::now());
@@ -378,10 +481,13 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         case WM_TIMER:
             if (wParam == kCharacterTickTimerId) {
                 HandleTick();
+            } else if (wParam == kMouthAnimationTimerId) {
+                HandleMouthAnimationTick();
             }
             return 0;
         case WM_DESTROY:
             KillTimer(hwnd_, kCharacterTickTimerId);
+            KillTimer(hwnd_, kMouthAnimationTimerId);
             SaveCurrentPosition();
             core::Logger::Info("Main window destroyed");
             PostQuitMessage(0);
