@@ -6,32 +6,28 @@
 
 #include <format>
 
+#include "audio/LanguageDetection.h"
 #include "core/Logger.h"
 
 namespace sveta::audio {
 
 namespace {
 
-bool ContainsHangul(const std::wstring& text) {
-    for (wchar_t ch : text) {
-        if ((ch >= 0xAC00 && ch <= 0xD7A3) ||  // Hangul syllables
-            (ch >= 0x1100 && ch <= 0x11FF) ||  // Hangul Jamo
-            (ch >= 0x3130 && ch <= 0x318F)) {  // Hangul compatibility Jamo
-            return true;
-        }
-    }
-    return false;
-}
-
-// LCID 0x0412 = ko-KR. Only switches voice for Korean text; otherwise
-// leaves whatever voice is already selected (the system default).
+// Always re-selects a voice for the detected language (not just for
+// Korean) — otherwise a voice picked for one reply stays "stuck" and
+// reads the next reply's different language in the wrong accent. Falls
+// back to whatever voice was already selected if none is installed for
+// that language (see README for which of the 7 target languages this
+// dev machine actually has voices for).
 void SelectVoiceForText(ISpVoice* voice, const std::wstring& text) {
-    if (!ContainsHangul(text)) {
-        return;
-    }
+    const Language language = DetectLanguage(text);
     Microsoft::WRL::ComPtr<ISpObjectToken> token;
-    if (SUCCEEDED(SpFindBestToken(SPCAT_VOICES, L"Language=412", nullptr, &token))) {
+    if (SUCCEEDED(SpFindBestToken(SPCAT_VOICES, VoiceLcidQuery(language).c_str(), nullptr, &token))) {
         voice->SetVoice(token.Get());
+    } else {
+        core::Logger::Warn(std::format(
+            "TextToSpeech: no installed voice for detected language {}; using whichever voice was last selected",
+            ToString(language)));
     }
 }
 

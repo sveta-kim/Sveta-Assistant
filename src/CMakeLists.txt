@@ -3,6 +3,7 @@ add_executable(SvetaAssistant WIN32
     ai/ChatClient.cpp
     ai/Persona.cpp
     app/main.cpp
+    audio/LanguageDetection.cpp
     audio/SpeakableText.cpp
     audio/TextToSpeech.cpp
     behavior/IdleBehavior.cpp
