@@ -6,7 +6,7 @@ Windows Desktop AI Companion / Interactive Character Platform.
 ## 진행 상황
 
 Phase 0(Foundation), Phase 1(Desktop Character), Phase 2(Interaction),
-Phase 3(Character Life) 완료:
+Phase 3(Character Life), Phase 4(AI Conversation) 완료:
 
 - 테두리 없음, 항상 위, 픽셀 단위로 투명한 창에 PNG 스프라이트를
   (WIC로 디코딩해) 렌더링
@@ -49,7 +49,41 @@ surprised는 전부 `calm.png` 위에 절차적으로 오버레이(블러시, �
 
 오버레이 생성 스크립트는 `tools/generate_emotion_sprites.py`(Python +
 Pillow)에 있다. `calm.png`가 바뀌거나 아이콘 위치/색을 조정하고 싶으면
-이 스크립트를 고쳐서 다시 실행하면 된다. 다음은 Phase 4(AI Conversation).
+이 스크립트를 고쳐서 다시 실행하면 된다.
+
+**텍스트 채팅**도 붙었다 (기획서 19장 "Idle -> Listening -> Thinking ->
+Talking -> Idle", 20장 AI Engine, 54장 두 번째 MVP):
+
+- 캐릭터를 더블클릭하면 말풍선 모양 입력창이 뜬다. Enter로 전송, Esc로
+  취소
+- `ai/ChatClient`가 WinHTTP로 OpenAI Chat Completions 호환 엔드포인트에
+  POST — 어떤 서비스든 그 스키마(`{model, messages}` 요청 /
+  `choices[0].message.content` 응답)를 따르면 붙는다. JSON은
+  `third_party/nlohmann/json.hpp`(벤더링, MIT) 사용
+- 네트워크 호출은 백그라운드 스레드에서 실행되고 결과는
+  `PostMessage`로 UI 스레드에 돌려준다 (기획서 49장 "AI 응답이
+  느리더라도 캐릭터는 계속 움직일 수 있어야 한다") — 응답을 기다리는
+  동안에도 Idle 애니메이션, 드래그, 쓰다듬기 전부 그대로 동작
+- 성격 수치를 반영한 간단한 시스템 프롬프트(`ai/Persona`)와 세션 내
+  대화 기록(최근 20턴, 재시작하면 사라짐 — Phase 8 Memory System이
+  대체할 자리표시자)
+- API 키는 `config/secrets.local.json`(`.gitignore` 처리, 실제 값은
+  본인이 직접 채워야 함)에, 엔드포인트/모델명은 `config/ai_config.json`
+  (커밋됨, placeholder 값)에 있다. 둘 다 안 채워져 있으면 더블클릭 시
+  "AI가 아직 설정되지 않았어요" 안내만 보여주고 네트워크 호출은
+  시도하지 않는다
+
+**말풍선 UI**: 처음엔 그냥 흰 사각형 Edit 박스였는데(구려서 다시 만듦),
+지금은 GDI+로 직접 그린 둥근 말풍선(꼬리, 부드러운 그림자, Segoe UI)이
+레이어드 창으로 뜬다. 입력 중일 때만 예외적으로 진짜 Edit 컨트롤을 쓰는데
+— `UpdateLayeredWindow`로 그리는 창은 일반 자식 컨트롤을 위에 합성하지
+못한다는 실제 Win32 제약 때문에, 그 순간만 레이어드를 끄고 둥근
+리전(`SetWindowRgn`)으로 대체한다. 생각 중/응답 표시일 때는 텍스트까지
+GDI+로 직접 그리므로 이 제약이 없다. GDI+ 폰트 서브시스템은 프로세스당
+최초 1회 초기화가 느려서(이 환경에서 ~5초, 이후 매번 ~4ms) 앱 시작 시
+백그라운드 스레드에서 미리 예열해둔다.
+
+다음은 Phase 5(Voice)나 Phase 6(Desktop Context) 중 선택.
 
 머리 히트박스는 현재 스프라이트 크기에 비례한 근사치(상단 50%,
 가운데 72% 너비)다. 캐릭터마다 다른 정확한 히트박스는 추후
@@ -68,6 +102,20 @@ DPI를 인식하는 외부 도구가 보는 좌표가 다를 수 있다. 앱 자
 - Git
 
 이 컴퓨터에는 둘 다 설치되어 있다 (VS 2026 Community, CMake 4.4.2).
+
+## AI 채팅 설정 (선택)
+
+`config/ai_config.json`의 `model`과 `config/secrets.local.json`의
+`api_key`를 채워야 실제로 응답이 온다. 안 채워도 앱은 정상 작동하고,
+더블클릭하면 설정이 안 됐다는 안내 말풍선만 뜬다.
+
+```json
+// config/ai_config.json (커밋됨 — 민감 정보 없음)
+{ "endpoint": "https://factchat-cloud.mindlogic.ai/v1/gateway", "model": "실제 모델명으로 교체" }
+
+// config/secrets.local.json (.gitignore 처리됨 — 직접 만들어서 채우기)
+{ "api_key": "실제 키로 교체" }
+```
 
 ## 빌드
 
@@ -101,6 +149,7 @@ assets/         공용 에셋
 config/         런타임 설정
 tests/          테스트
 tools/          에셋 생성 등 개발용 스크립트 (빌드에 포함 안 됨)
+third_party/    벤더링한 헤더 전용 라이브러리 (nlohmann/json)
 ```
 
 이 구조를 정한 근거는 기획서 47장, 전체 Phase 로드맵(Phase 0~13)은

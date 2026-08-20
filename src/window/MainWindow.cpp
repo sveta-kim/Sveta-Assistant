@@ -6,8 +6,11 @@
 #include <filesystem>
 #include <format>
 #include <string>
+#include <thread>
 
+#include "ai/Persona.h"
 #include "core/Logger.h"
+#include "core/StringConvert.h"
 #include "interaction/HeadHitbox.h"
 #include "window/WindowPosition.h"
 
@@ -23,6 +26,11 @@ constexpr uint32_t kMaxCharacterDimension = 240;
 
 constexpr UINT_PTR kCharacterTickTimerId = 1;
 constexpr UINT kCharacterTickIntervalMs = 1000;
+
+// Posted by the AI worker thread with an AiResponsePayload* in lParam.
+constexpr UINT kAiResponseMessage = WM_APP + 1;
+
+constexpr size_t kMaxHistoryMessages = 20;
 
 // TODO(Phase 9 - Item System / Content Platform): replace with the real
 // character package loader (character.json -> assets/). SVETA_CONTENT_DIR
@@ -46,7 +54,7 @@ POINT DefaultPosition(int width, int height) {
 std::unique_ptr<MainWindow> MainWindow::Create(HINSTANCE instance) {
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(WNDCLASSEXW);
-    wc.style = CS_HREDRAW | CS_VREDRAW;
+    wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
     wc.lpfnWndProc = &MainWindow::WndProc;
     wc.hInstance = instance;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
@@ -86,6 +94,12 @@ std::unique_ptr<MainWindow> MainWindow::Create(HINSTANCE instance) {
 
     auto window = std::unique_ptr<MainWindow>(new MainWindow(hwnd, std::move(sprite)));
     window->ApplySpriteToWindow();
+
+    window->chatBubble_ = ChatBubble::Create(instance);
+    window->aiConfig_ = ai::AiConfig::Load();
+    if (!window->aiConfig_ || !window->aiConfig_->IsUsable()) {
+        core::Logger::Warn("AI chat is not configured yet; double-click will show a placeholder reply");
+    }
 
     ShowWindow(hwnd, SW_SHOW);
     SetTimer(hwnd, kCharacterTickTimerId, kCharacterTickIntervalMs, nullptr);
@@ -228,6 +242,90 @@ void MainWindow::HandleTick() {
     SyncSpriteToEmotion();
 }
 
+POINT MainWindow::ComputeBubbleAnchor() const {
+    RECT rect{};
+    GetWindowRect(hwnd_, &rect);
+    return POINT{(rect.left + rect.right) / 2, rect.top};
+}
+
+void MainWindow::StartChat() {
+    if (!chatBubble_ || conversationInFlight_ || chatBubble_->IsVisible()) {
+        return;
+    }
+
+    chatBubble_->OpenForInput(
+        ComputeBubbleAnchor(),
+        [this](const std::wstring& message) { OnMessageSubmitted(message); },
+        [this]() { OnChatDismissed(); });
+}
+
+void MainWindow::OnMessageSubmitted(const std::wstring& message) {
+    const auto now = std::chrono::steady_clock::now();
+    characterState_.OnConversationStart(now);
+    SyncSpriteToEmotion();
+
+    conversationHistory_.push_back({"user", core::WideToUtf8(message)});
+
+    characterState_.OnThinking();
+    SyncSpriteToEmotion();
+    chatBubble_->ShowThinking(ComputeBubbleAnchor());
+
+    if (!aiConfig_ || !aiConfig_->IsUsable()) {
+        // Still flow through Thinking -> Talking so the UI is consistent,
+        // just without a real network round trip.
+        AiResponsePayload payload{
+            false,
+            L"(AI가 아직 설정되지 않았어요 — config/ai_config.json, config/secrets.local.json을 확인해주세요)"};
+        OnAiResponse(payload);
+        return;
+    }
+
+    conversationInFlight_ = true;
+
+    std::vector<ai::ChatMessage> requestHistory;
+    requestHistory.push_back({"system", ai::BuildSystemPrompt(characterState_.GetPersonality())});
+    requestHistory.insert(requestHistory.end(), conversationHistory_.begin(), conversationHistory_.end());
+
+    const ai::AiConfig config = *aiConfig_;
+    const HWND hwnd = hwnd_;
+
+    std::thread([config, requestHistory, hwnd]() {
+        const ai::ChatClient client(config);
+        const ai::ChatResult result = client.Send(requestHistory);
+
+        auto payload = std::make_unique<AiResponsePayload>();
+        payload->success = result.success;
+        payload->text = core::Utf8ToWide(result.text);
+
+        PostMessageW(hwnd, kAiResponseMessage, 0, reinterpret_cast<LPARAM>(payload.release()));
+    }).detach();
+}
+
+void MainWindow::OnAiResponse(const AiResponsePayload& payload) {
+    conversationInFlight_ = false;
+
+    characterState_.OnTalking(std::chrono::steady_clock::now());
+    SyncSpriteToEmotion();
+
+    if (payload.success) {
+        conversationHistory_.push_back({"assistant", core::WideToUtf8(payload.text)});
+        // Cap history length; Phase 8 (Memory System) replaces this with
+        // real session/long-term memory.
+        if (conversationHistory_.size() > kMaxHistoryMessages) {
+            conversationHistory_.erase(
+                conversationHistory_.begin(),
+                conversationHistory_.begin() + (conversationHistory_.size() - kMaxHistoryMessages));
+        }
+    }
+
+    chatBubble_->ShowResponse(ComputeBubbleAnchor(), payload.text, [this]() { OnChatDismissed(); });
+}
+
+void MainWindow::OnChatDismissed() {
+    characterState_.OnConversationEnd(isHovering_);
+    SyncSpriteToEmotion();
+}
+
 int MainWindow::RunMessageLoop() {
     MSG msg{};
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
@@ -259,6 +357,14 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         case WM_MOUSELEAVE:
             HandleMouseLeave();
             return 0;
+        case WM_LBUTTONDBLCLK:
+            StartChat();
+            return 0;
+        case kAiResponseMessage: {
+            std::unique_ptr<AiResponsePayload> payload(reinterpret_cast<AiResponsePayload*>(lParam));
+            OnAiResponse(*payload);
+            return 0;
+        }
         case WM_ENTERSIZEMOVE:
             // Fired by the caption-move loop the WM_LBUTTONDOWN trick enters.
             characterState_.OnDragStart(std::chrono::steady_clock::now());

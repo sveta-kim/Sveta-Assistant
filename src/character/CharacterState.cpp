@@ -34,9 +34,16 @@ void CharacterState::SetAction(Action action) {
     core::Logger::Info(std::format("Action -> {}", ToString(action_)));
 }
 
+bool CharacterState::IsConversing() const {
+    return action_ == Action::Listening || action_ == Action::Thinking || action_ == Action::Talking;
+}
+
 void CharacterState::OnPetted(std::chrono::steady_clock::time_point now) {
     lastInteractionTime_ = now;
     isSleeping_ = false;
+    if (IsConversing()) {
+        return; // an incidental pet shouldn't derail an active conversation
+    }
 
     SetEmotion(Emotion::Happy);
     SetAction(Action::BeingPetted);
@@ -52,6 +59,9 @@ void CharacterState::OnHoverStart(std::chrono::steady_clock::time_point now) {
     const bool wasSleeping = isSleeping_;
     isSleeping_ = false;
 
+    if (IsConversing()) {
+        return;
+    }
     if (transientActionUntil_) {
         return; // don't interrupt an in-progress reaction (e.g. still being petted)
     }
@@ -66,7 +76,7 @@ void CharacterState::OnHoverStart(std::chrono::steady_clock::time_point now) {
 }
 
 void CharacterState::OnHoverEnd() {
-    if (transientActionUntil_) {
+    if (IsConversing() || transientActionUntil_) {
         return;
     }
     if (action_ == Action::LookingAtCursor) {
@@ -90,6 +100,30 @@ void CharacterState::OnDragEnd(std::chrono::steady_clock::time_point now, bool i
     SetEmotion(isHovering ? Emotion::Curious : Emotion::Calm);
 }
 
+void CharacterState::OnConversationStart(std::chrono::steady_clock::time_point now) {
+    lastInteractionTime_ = now;
+    isSleeping_ = false;
+    transientActionUntil_.reset(); // an explicit chat pre-empts any reaction in progress
+    if (emotion_ == Emotion::Sleepy) {
+        SetEmotion(Emotion::Calm); // typing a message should visibly wake the character
+    }
+    SetAction(Action::Listening);
+}
+
+void CharacterState::OnThinking() {
+    SetAction(Action::Thinking);
+}
+
+void CharacterState::OnTalking(std::chrono::steady_clock::time_point now) {
+    lastInteractionTime_ = now; // a slow reply shouldn't let the character doze mid-conversation
+    SetAction(Action::Talking);
+}
+
+void CharacterState::OnConversationEnd(bool isHovering) {
+    SetAction(isHovering ? Action::LookingAtCursor : Action::Idle);
+    SetEmotion(isHovering ? Emotion::Curious : Emotion::Calm);
+}
+
 void CharacterState::Tick(std::chrono::steady_clock::time_point now, bool isHovering) {
     if (transientActionUntil_ && now >= *transientActionUntil_) {
         transientActionUntil_.reset();
@@ -97,8 +131,9 @@ void CharacterState::Tick(std::chrono::steady_clock::time_point now, bool isHove
         SetEmotion(isHovering ? Emotion::Curious : Emotion::Calm);
         return;
     }
-    if (transientActionUntil_ || action_ == Action::Dragged) {
-        return; // a reaction or an explicit drag is already in progress
+    const bool isConversing = action_ == Action::Listening || action_ == Action::Thinking || action_ == Action::Talking;
+    if (transientActionUntil_ || action_ == Action::Dragged || isConversing) {
+        return; // a reaction, drag, or conversation is already in progress
     }
 
     if (!isSleeping_ && now - lastInteractionTime_ >= kIdleTimeoutToSleep) {
