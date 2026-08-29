@@ -21,6 +21,9 @@ enum class Action {
     Drinking,
     Dragged,
     UsingItem,
+    // Not in the original 15 (section 11); added so the character can
+    // "play along" while the user is in a game (see context/GameDetector).
+    PlayingGame,
 };
 
 std::string_view ToString(Action action);

@@ -51,9 +51,12 @@ constexpr int kPostSpeechGraceMs = 2500;
 // TODO(Phase 9 - Item System / Content Platform): replace with the real
 // character package loader (character.json -> assets/). SVETA_CONTENT_DIR
 // points at the repo's content/ directory for local development only.
-std::filesystem::path SpritePathForEmotion(character::Emotion emotion) {
-    const std::string fileName(character::SpriteFileName(emotion));
+std::filesystem::path SpritePathForFile(const std::string& fileName) {
     return std::filesystem::path(SVETA_CONTENT_DIR) / L"characters" / L"sveta" / L"assets" / fileName;
+}
+
+std::filesystem::path SpritePathForEmotion(character::Emotion emotion) {
+    return SpritePathForFile(std::string(character::SpriteFileName(emotion)));
 }
 
 POINT DefaultPosition(int width, int height) {
@@ -199,10 +202,10 @@ void MainWindow::ApplyPixelsToWindow(const std::vector<uint8_t>& pixels, uint32_
     ReleaseDC(nullptr, screenDc);
 }
 
-void MainWindow::ReloadSpriteForEmotion(character::Emotion emotion) {
-    auto sprite = rendering::Sprite::LoadFromFile(SpritePathForEmotion(emotion), kMaxCharacterDimension);
+void MainWindow::ReloadSprite(const std::string& fileName) {
+    auto sprite = rendering::Sprite::LoadFromFile(SpritePathForFile(fileName), kMaxCharacterDimension);
     if (!sprite) {
-        core::Logger::Warn(std::format("No sprite for emotion {}; falling back to calm", character::ToString(emotion)));
+        core::Logger::Warn(std::format("No sprite file '{}'; falling back to calm", fileName));
         sprite = rendering::Sprite::LoadFromFile(SpritePathForEmotion(character::Emotion::Calm), kMaxCharacterDimension);
     }
     if (!sprite) {
@@ -216,11 +219,15 @@ void MainWindow::ReloadSpriteForEmotion(character::Emotion emotion) {
 
 void MainWindow::SyncSpriteToEmotion() {
     const character::Emotion emotion = characterState_.CurrentEmotion();
-    if (emotion == lastAppliedEmotion_) {
+    // PlayingGame has its own dedicated art (a gamepad overlay) that takes
+    // priority over whatever emotion-based sprite would otherwise apply.
+    const bool isPlayingGame = characterState_.CurrentAction() == character::Action::PlayingGame;
+    if (emotion == lastAppliedEmotion_ && isPlayingGame == lastAppliedIsPlayingGame_) {
         return;
     }
     lastAppliedEmotion_ = emotion;
-    ReloadSpriteForEmotion(emotion);
+    lastAppliedIsPlayingGame_ = isPlayingGame;
+    ReloadSprite(isPlayingGame ? "playing_game.png" : std::string(character::SpriteFileName(emotion)));
 }
 
 void MainWindow::SaveCurrentPosition() {
@@ -267,7 +274,11 @@ void MainWindow::HandleMouseLeave() {
 }
 
 void MainWindow::HandleTick() {
-    characterState_.Tick(std::chrono::steady_clock::now(), isHovering_);
+    const auto now = std::chrono::steady_clock::now();
+    if (contextEngine_) {
+        characterState_.SetGamingContext(contextEngine_->IsGaming(), now);
+    }
+    characterState_.Tick(now, isHovering_);
     SyncSpriteToEmotion();
 }
 

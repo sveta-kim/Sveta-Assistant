@@ -1,0 +1,26 @@
+{
+    "known_process_names": [
+        "leagueoflegends.exe",
+        "league of legends.exe",
+        "valorant.exe",
+        "valorant-win64-shipping.exe",
+        "csgo.exe",
+        "cs2.exe",
+        "dota2.exe",
+        "overwatch.exe",
+        "eldenring.exe",
+        "apex_legends.exe",
+        "r5apex.exe",
+        "fortniteclient-win64-shipping.exe",
+        "genshinimpact.exe",
+        "wutheringwaves.exe",
+        "pubg.exe",
+        "tslgame.exe",
+        "rocketleague.exe",
+        "minecraft.exe",
+        "javaw.exe",
+        "terraria.exe",
+        "stardewvalley.exe",
+        "amongus.exe"
+    ]
+}

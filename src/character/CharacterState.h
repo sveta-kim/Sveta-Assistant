@@ -30,6 +30,12 @@ public:
     void OnTalking(std::chrono::steady_clock::time_point now);
     void OnConversationEnd(bool isHovering);
 
+    // Driven by context::GameDetector via MainWindow's tick (not a project
+    // plan section 11 action originally, but a natural extension of
+    // Phase 6 desktop awareness: "play along" while the user is gaming).
+    // Idempotent — cheap to call every tick with the same value.
+    void SetGamingContext(bool isGaming, std::chrono::steady_clock::time_point now);
+
     // Call periodically (MainWindow drives this from a timer). Handles the
     // idle-to-sleep timeout, transient-action expiry (e.g. BeingPetted
     // reverting after a couple seconds), and idle behavior selection.
@@ -43,11 +49,17 @@ private:
     void SetEmotion(Emotion emotion);
     void SetAction(Action action);
     bool IsConversing() const;
+    // What Action/Emotion to fall back to once a transient reaction, hover,
+    // drag, or conversation ends: PlayingGame/Excited while gaming,
+    // Idle/Calm otherwise.
+    Action DefaultAction() const;
+    Emotion DefaultEmotion() const;
 
     Personality personality_;
     Emotion emotion_ = Emotion::Calm;
     Action action_ = Action::Idle;
     bool isSleeping_ = false;
+    bool isGaming_ = false;
 
     std::chrono::steady_clock::time_point lastInteractionTime_;
     std::optional<std::chrono::steady_clock::time_point> transientActionUntil_;

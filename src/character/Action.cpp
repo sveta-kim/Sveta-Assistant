@@ -19,6 +19,7 @@ std::string_view ToString(Action action) {
         case Action::Drinking: return "Drinking";
         case Action::Dragged: return "Dragged";
         case Action::UsingItem: return "UsingItem";
+        case Action::PlayingGame: return "PlayingGame";
     }
     return "Unknown";
 }

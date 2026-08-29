@@ -65,7 +65,7 @@ private:
     void HandleMouthAnimationTick();
     void HandleTtsEvent();
     void SyncSpriteToEmotion();
-    void ReloadSpriteForEmotion(character::Emotion emotion);
+    void ReloadSprite(const std::string& fileName);
 
     POINT ComputeBubbleAnchor() const;
     void StartChat();
@@ -80,6 +80,7 @@ private:
     interaction::PettingDetector pettingDetector_;
     character::CharacterState characterState_;
     character::Emotion lastAppliedEmotion_ = character::Emotion::Calm;
+    bool lastAppliedIsPlayingGame_ = false;
 
     std::unique_ptr<ChatBubble> chatBubble_;
     std::optional<ai::AiConfig> aiConfig_;

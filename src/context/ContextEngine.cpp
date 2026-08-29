@@ -34,13 +34,13 @@ std::unique_ptr<ContextEngine> ContextEngine::Create(HWND notifyWindow, UINT not
 
     if (!engine->privacy_.screenAwarenessEnabled) {
         core::Logger::Info("ContextEngine: screen awareness disabled via config/privacy_config.json");
-    } else {
-        // Seed an initial snapshot immediately rather than waiting for the
-        // first EVENT_SYSTEM_FOREGROUND change, which may not fire for a
-        // while (or ever, if the user opens chat without switching windows
-        // first).
-        engine->OnActiveWindowChanged(ActiveWindowTracker::GetCurrentWindowInfo());
     }
+    // Seed an initial snapshot immediately rather than waiting for the
+    // first EVENT_SYSTEM_FOREGROUND change, which may not fire for a
+    // while (or ever, if the user opens chat without switching windows
+    // first). Unconditional even when screen awareness is off: the
+    // gaming-context check below doesn't read window title/content.
+    engine->OnActiveWindowChanged(ActiveWindowTracker::GetCurrentWindowInfo());
 
     return engine;
 }
@@ -61,6 +61,14 @@ bool ContextEngine::IsExcluded(const std::wstring& processName) const {
 }
 
 void ContextEngine::OnActiveWindowChanged(const ActiveWindowTracker::WindowInfo& info) {
+    // Independent of the privacy toggle below: this only looks at the
+    // process name and window geometry, never title/UI text.
+    const bool wasGaming = isGaming_;
+    isGaming_ = gameDetector_.IsLikelyGame(info.processName, info.hwnd);
+    if (isGaming_ != wasGaming) {
+        core::Logger::Info(std::format("ContextEngine: gaming context {}", isGaming_ ? "started" : "ended"));
+    }
+
     if (!privacy_.screenAwarenessEnabled) {
         return;
     }

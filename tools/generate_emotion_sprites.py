@@ -55,6 +55,16 @@ def draw_teardrop(draw, cx, cy, r, fill):
     draw.polygon([(cx, cy - r * 1.6), (cx - r * 0.9, cy + r * 0.2), (cx + r * 0.9, cy + r * 0.2)], fill=fill)
 
 
+def draw_gamepad(draw, cx, cy, w, h, body_fill, stick_fill):
+    # Kept deliberately bold/simple (pill body + two stick circles, no
+    # tiny ABXY/D-pad detail) since the whole sprite gets downscaled to
+    # ~240px on screen — fine detail here would just be noise.
+    draw.rounded_rectangle([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], radius=h * 0.5, fill=body_fill)
+    stick_r = h * 0.32
+    for stick_cx in (cx - w * 0.24, cx + w * 0.24):
+        draw.ellipse([stick_cx - stick_r, cy - stick_r, stick_cx + stick_r, cy + stick_r], fill=stick_fill)
+
+
 def save(name, overlay):
     composited = Image.alpha_composite(base, overlay)
     path = ASSETS_DIR / f"{name}.png"
@@ -130,6 +140,16 @@ def main():
     d = ImageDraw.Draw(o)
     d.text((RIGHT_MARGIN_X - 35, ICON_Y - 90), "!", font=font(190), fill=(230, 40, 40, 255))
     save("surprised", o)
+
+    # Playing game: a held-up gamepad plus a couple of excited sparkles.
+    # Not a project-plan emotion (see character/Action.h PlayingGame) —
+    # reuses the same overlay-on-calm.png approach as the emotions above.
+    o = new_overlay()
+    d = ImageDraw.Draw(o)
+    draw_gamepad(d, W * 0.5, H * 0.86, W * 0.34, H * 0.14, (55, 58, 68, 255), (255, 210, 60, 255))
+    draw_star(d, RIGHT_MARGIN_X, ICON_Y, 55, (255, 210, 60, 220))
+    draw_star(d, LEFT_MARGIN_X, ICON_Y, 55, (255, 210, 60, 220))
+    save("playing_game", o)
 
     print("done")
 

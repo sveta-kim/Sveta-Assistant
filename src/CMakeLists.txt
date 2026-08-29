@@ -13,6 +13,7 @@ add_executable(SvetaAssistant WIN32
     character/Personality.cpp
     context/ActiveWindowTracker.cpp
     context/ContextEngine.cpp
+    context/GameDetector.cpp
     context/PrivacyConfig.cpp
     context/UiAutomationReader.cpp
     core/Logger.cpp

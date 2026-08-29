@@ -38,6 +38,14 @@ bool CharacterState::IsConversing() const {
     return action_ == Action::Listening || action_ == Action::Thinking || action_ == Action::Talking;
 }
 
+Action CharacterState::DefaultAction() const {
+    return isGaming_ ? Action::PlayingGame : Action::Idle;
+}
+
+Emotion CharacterState::DefaultEmotion() const {
+    return isGaming_ ? Emotion::Excited : Emotion::Calm;
+}
+
 void CharacterState::OnPetted(std::chrono::steady_clock::time_point now) {
     lastInteractionTime_ = now;
     isSleeping_ = false;
@@ -80,8 +88,8 @@ void CharacterState::OnHoverEnd() {
         return;
     }
     if (action_ == Action::LookingAtCursor) {
-        SetAction(Action::Idle);
-        SetEmotion(Emotion::Calm);
+        SetAction(DefaultAction());
+        SetEmotion(DefaultEmotion());
     }
 }
 
@@ -96,8 +104,8 @@ void CharacterState::OnDragStart(std::chrono::steady_clock::time_point now) {
 
 void CharacterState::OnDragEnd(std::chrono::steady_clock::time_point now, bool isHovering) {
     lastInteractionTime_ = now;
-    SetAction(isHovering ? Action::LookingAtCursor : Action::Idle);
-    SetEmotion(isHovering ? Emotion::Curious : Emotion::Calm);
+    SetAction(isHovering ? Action::LookingAtCursor : DefaultAction());
+    SetEmotion(isHovering ? Emotion::Curious : DefaultEmotion());
 }
 
 void CharacterState::OnConversationStart(std::chrono::steady_clock::time_point now) {
@@ -120,20 +128,51 @@ void CharacterState::OnTalking(std::chrono::steady_clock::time_point now) {
 }
 
 void CharacterState::OnConversationEnd(bool isHovering) {
-    SetAction(isHovering ? Action::LookingAtCursor : Action::Idle);
-    SetEmotion(isHovering ? Emotion::Curious : Emotion::Calm);
+    SetAction(isHovering ? Action::LookingAtCursor : DefaultAction());
+    SetEmotion(isHovering ? Emotion::Curious : DefaultEmotion());
+}
+
+void CharacterState::SetGamingContext(bool isGaming, std::chrono::steady_clock::time_point now) {
+    if (isGaming_ == isGaming) {
+        return;
+    }
+    isGaming_ = isGaming;
+    lastInteractionTime_ = now;
+    isSleeping_ = false;
+
+    // Don't interrupt a reaction, drag, conversation, or direct hover
+    // that's already claiming the display; the new default just takes
+    // effect the next time one of those hands control back.
+    if (IsConversing() || transientActionUntil_ || action_ == Action::Dragged || action_ == Action::LookingAtCursor) {
+        return;
+    }
+
+    SetAction(DefaultAction());
+    SetEmotion(DefaultEmotion());
 }
 
 void CharacterState::Tick(std::chrono::steady_clock::time_point now, bool isHovering) {
     if (transientActionUntil_ && now >= *transientActionUntil_) {
         transientActionUntil_.reset();
-        SetAction(isHovering ? Action::LookingAtCursor : Action::Idle);
-        SetEmotion(isHovering ? Emotion::Curious : Emotion::Calm);
+        SetAction(isHovering ? Action::LookingAtCursor : DefaultAction());
+        SetEmotion(isHovering ? Emotion::Curious : DefaultEmotion());
         return;
     }
     const bool isConversing = action_ == Action::Listening || action_ == Action::Thinking || action_ == Action::Talking;
     if (transientActionUntil_ || action_ == Action::Dragged || isConversing) {
         return; // a reaction, drag, or conversation is already in progress
+    }
+
+    if (isGaming_) {
+        // Being at the PC playing counts as presence; don't doze off, and
+        // hold the PlayingGame pose instead of picking idle flourishes
+        // (unless a hover/reaction already has priority — see above).
+        lastInteractionTime_ = now;
+        if (action_ == Action::Idle) {
+            SetAction(Action::PlayingGame);
+            SetEmotion(Emotion::Excited);
+        }
+        return;
     }
 
     if (!isSleeping_ && now - lastInteractionTime_ >= kIdleTimeoutToSleep) {

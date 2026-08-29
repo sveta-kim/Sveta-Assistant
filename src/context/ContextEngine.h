@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "context/ActiveWindowTracker.h"
+#include "context/GameDetector.h"
 #include "context/PrivacyConfig.h"
 
 namespace sveta::context {
@@ -37,6 +38,13 @@ public:
 
     bool IsEnabled() const { return privacy_.screenAwarenessEnabled; }
 
+    // Best-known guess, updated on every active-window change, for whether
+    // the user is currently in a game (see GameDetector). Independent of
+    // the privacy toggle above — it drives the character's own behavior,
+    // not what's sent to the AI, and reveals nothing beyond "you're in a
+    // game" (no title/UI text).
+    bool IsGaming() const { return isGaming_; }
+
     // Call when notifyMessage arrives at notifyWindow; reclaims and
     // applies the background thread's result.
     void OnSnapshotMessage(LPARAM lParam);
@@ -56,10 +64,12 @@ private:
     HWND notifyWindow_;
     UINT notifyMessage_;
     PrivacyConfig privacy_;
+    GameDetector gameDetector_;
 
     ContextSnapshot current_;
     bool hasSnapshot_ = false;
     int currentGeneration_ = 0;
+    bool isGaming_ = false;
 };
 
 } // namespace sveta::context
