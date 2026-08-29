@@ -8,9 +8,11 @@
 namespace sveta::character {
 
 namespace {
-// Placeholder pending real UX tuning: how long without interaction before
-// the character dozes off (project plan sections 6, 52).
-constexpr std::chrono::seconds kIdleTimeoutToSleep{60};
+// How long without interaction before the character dozes off (project
+// plan sections 6, 52). 60s made it doze off mid-task constantly during
+// normal desktop use; 5 minutes gives enough room to read/think without
+// touching the character before it's treated as "user stepped away".
+constexpr std::chrono::minutes kIdleTimeoutToSleep{5};
 } // namespace
 
 CharacterState::CharacterState(Personality personality)
