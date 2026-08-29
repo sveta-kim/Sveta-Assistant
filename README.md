@@ -7,7 +7,7 @@ Windows Desktop AI Companion / Interactive Character Platform.
 
 Phase 0(Foundation), Phase 1(Desktop Character), Phase 2(Interaction),
 Phase 3(Character Life), Phase 4(AI Conversation), Phase 5(Voice — TTS만,
-아래 참고) 완료:
+아래 참고), Phase 6(Desktop Context — 아래 참고) 완료:
 
 - 테두리 없음, 항상 위, 픽셀 단위로 투명한 창에 PNG 스프라이트를
   (WIC로 디코딩해) 렌더링
@@ -154,7 +154,52 @@ GDI+로 직접 그리므로 이 제약이 없다. GDI+ 폰트 서브시스템은
   응답으로 끝까지 떠 있다가 종료 이벤트 후 정확히 닫히는 것 확인. 새 메시지를
   보내거나 수동으로 닫으면 읽던 음성도 즉시 끊는다
 
-다음은 Phase 6(Desktop Context)이나, 다른 머신에서 STT까지 마저 할지
+**데스크톱 인식(Desktop Context)**도 붙었다 (기획서 17장 Perception):
+
+- 지금 사용자가 어떤 창을 보고 있는지, 그 창에 뭐가 떠 있는지를 AI 채팅
+  시스템 프롬프트에 한 줄로 얹는다. 원화면 스크린샷/Vision은 이번엔
+  빼고, "가능하면 Screenshot보다 구조화된 UI 데이터를 우선한다"(기획서
+  17장)는 원칙에 따라 UI Automation 텍스트만 얕게(자식 요소까지만,
+  최대 12개, 800자 캡) 읽어오는 것으로 스코프를 줄였다 — 화면 전체를
+  캡처하는 것보다 훨씬 가볍고, 화면에 뭐가 "보이는지"보다 뭐가
+  "떠 있는지" 위주라 프라이버시 부담도 적다
+- `context/ActiveWindowTracker`가 `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)`로
+  포그라운드 창이 바뀔 때마다 이벤트 기반으로(폴링 없이) 알림을 받는다
+- `context/UiAutomationReader`가 그 창의 UI Automation 트리에서 자식
+  요소들의 `Name`을 얕게 훑어서 요약 텍스트를 만든다(화면 밖
+  `IsOffscreen` 요소는 제외). 느릴 수 있는 COM 호출이라 백그라운드
+  스레드에서 실행하고, 다 끝나기 전에 창이 또 바뀌면 세대(generation)
+  번호로 낡은 결과를 버린다 — AI 응답/TTS에서 이미 쓰던 것과 같은
+  "백그라운드 스레드 → `PostMessage` → UI 스레드에서 재조립" 패턴
+- `config/privacy_config.json`(`screen_awareness_enabled`,
+  `excluded_processes`)으로 기능 자체를 끄거나 특정 프로세스(예:
+  비밀번호 관리자)를 제외할 수 있다
+- `context/ContextEngine::BuildContextLine()`이 이걸 모아
+  `(사용자는 지금 "제목" (process.exe) 창을 보고 있다. 화면에 보이는
+  내용: ...)` 같은 한 줄로 만들고, `MainWindow::OnMessageSubmitted()`가
+  매 메시지마다 페르소나 시스템 프롬프트 뒤에 추가 시스템 메시지로
+  끼워 넣는다
+- 실제로 이 개발 머신에서 크롬으로 유튜브를 보고 있는 상태로 실행해서
+  확인 — 로그에 실제 영상 제목("...근황 - YouTube - Chrome",
+  chrome.exe)과 UI Automation으로 읽어온 화면 텍스트(106자)가 정확히
+  찍히는 것을 확인했다
+- 실제 버그 하나 발견: 앱을 켠 직후 사용자가 창을 한 번도 안 바꾸면
+  `ContextEngine`이 아무 스냅샷도 못 만들어서(포그라운드 "변경" 이벤트만
+  기다리고 있었음) 첫 채팅에 컨텍스트가 비어 있었다. `Create()`에서
+  `ActiveWindowTracker::GetCurrentWindowInfo()`로 현재 포그라운드 창을
+  즉시 한 번 읽어와 시드하도록 고쳤다
+- 빌드 중 실제로 걸린 문제: `<UIAutomationClient.h>`는 COM의 `interface`
+  매크로(`struct`로 치환되는)가 이미 정의돼 있다고 가정하고 자기
+  자신은 그걸 정의하지 않는다 — 이 프로젝트는 `<windows.h>`만 두고
+  `<objbase.h>`를 따로 안 걸어서, 매크로가 치환되지 않은 채
+  `typedef interface X X;`가 그대로 파싱되며 수백 줄짜리 C2146/C2371
+  연쇄 오류가 났다. `<objbase.h>`를 먼저 include해서 해결
+
+STT/Push-to-Talk는 이번에도 뺐다 — Phase 5와 같은 이유(이 개발
+머신엔 한국어/영어 음성 인식 엔진이 없음)로, 다른 머신에서 언어팩을
+설치한 뒤 이어서 하기로 함.
+
+다음은 Phase 7(Proactive AI)이나, 다른 머신에서 STT까지 마저 할지
 선택.
 
 머리 히트박스는 현재 스프라이트 크기에 비례한 근사치(상단 50%,
@@ -215,7 +260,7 @@ src/
   interaction/  마우스 상호작용, 쓰다듬기, 히트박스
   content/      캐릭터/아이템/가구 패키지 로딩
   items/        인터랙티브 소품
-  context/      데스크톱 인식, 화면 이해
+  context/      데스크톱 인식(활성 창 추적, UI Automation 얕은 텍스트 읽기)
   ai/           AI 엔진 연동 (대화, 비전)
   memory/       세션/일간/장기 기억
   audio/        TTS (SAPI); STT는 이 머신에 언어 인식 모델이 없어서 보류

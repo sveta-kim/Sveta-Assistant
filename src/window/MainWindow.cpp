@@ -34,6 +34,9 @@ constexpr UINT kAiResponseMessage = WM_APP + 1;
 // Posted by SAPI itself (see ISpVoice::SetNotifyWindowMessage) when speech
 // starts/ends; no payload, just a signal to call TextToSpeech::PumpEvents().
 constexpr UINT kTtsEventMessage = WM_APP + 2;
+// Posted by ContextEngine's background UI Automation read with a
+// ContextSnapshot* in lParam.
+constexpr UINT kContextSnapshotMessage = WM_APP + 3;
 
 constexpr size_t kMaxHistoryMessages = 20;
 
@@ -117,6 +120,11 @@ std::unique_ptr<MainWindow> MainWindow::Create(HINSTANCE instance) {
     window->textToSpeech_ = audio::TextToSpeech::Create(hwnd, kTtsEventMessage);
     if (!window->textToSpeech_) {
         core::Logger::Warn("Text-to-speech unavailable; replies will be text-only");
+    }
+
+    window->contextEngine_ = context::ContextEngine::Create(hwnd, kContextSnapshotMessage);
+    if (!window->contextEngine_) {
+        core::Logger::Warn("Desktop awareness unavailable; chat won't know what's on screen");
     }
 
     ShowWindow(hwnd, SW_SHOW);
@@ -318,6 +326,12 @@ void MainWindow::OnMessageSubmitted(const std::wstring& message) {
 
     std::vector<ai::ChatMessage> requestHistory;
     requestHistory.push_back({"system", ai::BuildSystemPrompt(characterState_.GetPersonality())});
+    if (contextEngine_) {
+        const std::wstring contextLine = contextEngine_->BuildContextLine();
+        if (!contextLine.empty()) {
+            requestHistory.push_back({"system", core::WideToUtf8(contextLine)});
+        }
+    }
     requestHistory.insert(requestHistory.end(), conversationHistory_.begin(), conversationHistory_.end());
 
     const ai::AiConfig config = *aiConfig_;
@@ -467,6 +481,11 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
         }
         case kTtsEventMessage:
             HandleTtsEvent();
+            return 0;
+        case kContextSnapshotMessage:
+            if (contextEngine_) {
+                contextEngine_->OnSnapshotMessage(lParam);
+            }
             return 0;
         case WM_ENTERSIZEMOVE:
             // Fired by the caption-move loop the WM_LBUTTONDOWN trick enters.

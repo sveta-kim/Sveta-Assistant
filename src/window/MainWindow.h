@@ -11,6 +11,7 @@
 #include "ai/ChatClient.h"
 #include "audio/TextToSpeech.h"
 #include "character/CharacterState.h"
+#include "context/ContextEngine.h"
 #include "interaction/PettingDetector.h"
 #include "rendering/Sprite.h"
 #include "window/ChatBubble.h"
@@ -25,6 +26,8 @@ namespace sveta::window {
 // network worker thread).
 // Phase 5: TTS speech for AI replies, with a lightweight talking
 // indicator in place of real mouth animation (see rendering/SpriteOverlay).
+// Phase 6: desktop awareness (active window + shallow UI Automation text)
+// folded into the chat system prompt as context.
 class MainWindow {
 public:
     static std::unique_ptr<MainWindow> Create(HINSTANCE instance);
@@ -90,6 +93,8 @@ private:
     // the real "speech ended" event reschedules the bubble's dismiss timer
     // or something else (a new message, a manual dismiss) pre-empts it.
     bool awaitingSpeechEndForDismiss_ = false;
+
+    std::unique_ptr<context::ContextEngine> contextEngine_;
 };
 
 } // namespace sveta::window

@@ -11,6 +11,10 @@ add_executable(SvetaAssistant WIN32
     character/CharacterState.cpp
     character/Emotion.cpp
     character/Personality.cpp
+    context/ActiveWindowTracker.cpp
+    context/ContextEngine.cpp
+    context/PrivacyConfig.cpp
+    context/UiAutomationReader.cpp
     core/Logger.cpp
     core/Paths.cpp
     core/StringConvert.cpp
@@ -48,6 +52,9 @@ target_compile_definitions(SvetaAssistant PRIVATE
     _UNICODE
     WIN32_LEAN_AND_MEAN
     NOMINMAX
+    WINVER=0x0A00
+    _WIN32_WINNT=0x0A00
+    NTDDI_VERSION=0x0A000008
     SVETA_CONTENT_DIR="${CMAKE_SOURCE_DIR}/content"
     SVETA_CONFIG_DIR="${CMAKE_SOURCE_DIR}/config"
 )
