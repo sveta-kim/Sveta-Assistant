@@ -73,6 +73,16 @@ POINT DefaultPosition(int width, int height) {
     };
 }
 
+// A saved position can go stale if a monitor gets disconnected or the
+// display arrangement changes since it was last saved (e.g. an old
+// right-monitor position with nothing there anymore) -- restoring it
+// blindly would put the whole window somewhere with no screen at all,
+// making the app look like it silently failed to launch.
+bool IsPositionOnAnyMonitor(POINT position, int width, int height) {
+    RECT rect{position.x, position.y, position.x + width, position.y + height};
+    return MonitorFromRect(&rect, MONITOR_DEFAULTTONULL) != nullptr;
+}
+
 } // namespace
 
 std::unique_ptr<MainWindow> MainWindow::Create(HINSTANCE instance) {
@@ -98,7 +108,13 @@ std::unique_ptr<MainWindow> MainWindow::Create(HINSTANCE instance) {
     const int width = sprite ? static_cast<int>(sprite->Width()) : kFallbackSize;
     const int height = sprite ? static_cast<int>(sprite->Height()) : kFallbackSize;
 
-    const POINT position = LoadWindowPosition().value_or(DefaultPosition(width, height));
+    POINT position = DefaultPosition(width, height);
+    if (const auto savedPosition = LoadWindowPosition();
+        savedPosition && IsPositionOnAnyMonitor(*savedPosition, width, height)) {
+        position = *savedPosition;
+    } else if (savedPosition) {
+        core::Logger::Warn("Saved window position is off every current monitor; using the default position instead");
+    }
 
     // WS_POPUP: borderless. WS_EX_LAYERED: per-pixel transparency support.
     // WS_EX_TOPMOST: always on top. WS_EX_TOOLWINDOW: hide from taskbar/alt-tab.
