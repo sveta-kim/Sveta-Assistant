@@ -2,6 +2,7 @@
 
 #include <windows.h>
 
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
@@ -28,6 +29,8 @@ namespace sveta::window {
 // indicator in place of real mouth animation (see rendering/SpriteOverlay).
 // Phase 6: desktop awareness (active window + shallow UI Automation text)
 // folded into the chat system prompt as context.
+// Phase 7: proactive speech (project plan section 18) -- currently just
+// the "same error repeated" trigger, see ContextEngine::ConsumeSameErrorRepeatedEvent.
 class MainWindow {
 public:
     static std::unique_ptr<MainWindow> Create(HINSTANCE instance);
@@ -72,6 +75,8 @@ private:
     void OnMessageSubmitted(const std::wstring& message);
     void OnChatDismissed();
     void OnAiResponse(const AiResponsePayload& payload);
+    void SendChatRequestAsync(std::vector<ai::ChatMessage> requestHistory);
+    void StartProactiveSpeech(const std::wstring& situationDescription);
 
     HWND hwnd_;
     std::optional<rendering::Sprite> sprite_;
@@ -96,6 +101,8 @@ private:
     bool awaitingSpeechEndForDismiss_ = false;
 
     std::unique_ptr<context::ContextEngine> contextEngine_;
+    // Epoch (never triggered yet) until the first proactive speech.
+    std::chrono::steady_clock::time_point lastProactiveSpeechTime_{};
 };
 
 } // namespace sveta::window

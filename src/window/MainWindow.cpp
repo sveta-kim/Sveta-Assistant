@@ -48,6 +48,11 @@ constexpr UINT kMouthAnimationIntervalMs = 180;
 // instant the voice stops.
 constexpr int kPostSpeechGraceMs = 2500;
 
+// Floor between proactive speeches (project plan section 18) so a
+// still-broken build doesn't get commented on every single rerun.
+// Placeholder pending real UX tuning, same as the idle-to-sleep timeout.
+constexpr std::chrono::minutes kProactiveCooldown{10};
+
 // TODO(Phase 9 - Item System / Content Platform): replace with the real
 // character package loader (character.json -> assets/). SVETA_CONTENT_DIR
 // points at the repo's content/ directory for local development only.
@@ -277,6 +282,13 @@ void MainWindow::HandleTick() {
     const auto now = std::chrono::steady_clock::now();
     if (contextEngine_) {
         characterState_.SetGamingContext(contextEngine_->IsGaming(), now);
+
+        if (now - lastProactiveSpeechTime_ >= kProactiveCooldown) {
+            if (const auto situation = contextEngine_->ConsumeSameErrorRepeatedEvent()) {
+                lastProactiveSpeechTime_ = now;
+                StartProactiveSpeech(*situation);
+            }
+        }
     }
     characterState_.Tick(now, isHovering_);
     SyncSpriteToEmotion();
@@ -333,8 +345,6 @@ void MainWindow::OnMessageSubmitted(const std::wstring& message) {
         return;
     }
 
-    conversationInFlight_ = true;
-
     std::vector<ai::ChatMessage> requestHistory;
     requestHistory.push_back({"system", ai::BuildSystemPrompt(characterState_.GetPersonality())});
     if (contextEngine_) {
@@ -344,11 +354,16 @@ void MainWindow::OnMessageSubmitted(const std::wstring& message) {
         }
     }
     requestHistory.insert(requestHistory.end(), conversationHistory_.begin(), conversationHistory_.end());
+    SendChatRequestAsync(std::move(requestHistory));
+}
+
+void MainWindow::SendChatRequestAsync(std::vector<ai::ChatMessage> requestHistory) {
+    conversationInFlight_ = true;
 
     const ai::AiConfig config = *aiConfig_;
     const HWND hwnd = hwnd_;
 
-    std::thread([config, requestHistory, hwnd]() {
+    std::thread([config, requestHistory = std::move(requestHistory), hwnd]() {
         const ai::ChatClient client(config);
         const ai::ChatResult result = client.Send(requestHistory);
 
@@ -358,6 +373,30 @@ void MainWindow::OnMessageSubmitted(const std::wstring& message) {
 
         PostMessageW(hwnd, kAiResponseMessage, 0, reinterpret_cast<LPARAM>(payload.release()));
     }).detach();
+}
+
+void MainWindow::StartProactiveSpeech(const std::wstring& situationDescription) {
+    // Same guards as StartChat, plus: no point speaking up about the
+    // screen if the AI isn't even configured.
+    if (!chatBubble_ || conversationInFlight_ || chatBubble_->IsVisible() || !aiConfig_ || !aiConfig_->IsUsable()) {
+        return;
+    }
+
+    core::Logger::Info("Proactive speech triggered (same error repeated)");
+
+    const auto now = std::chrono::steady_clock::now();
+    characterState_.OnConversationStart(now);
+    SyncSpriteToEmotion();
+
+    characterState_.OnThinking();
+    SyncSpriteToEmotion();
+    chatBubble_->ShowThinking(ComputeBubbleAnchor());
+
+    std::vector<ai::ChatMessage> requestHistory;
+    requestHistory.push_back({"system", ai::BuildSystemPrompt(characterState_.GetPersonality())});
+    requestHistory.push_back({"system", core::WideToUtf8(situationDescription)});
+    requestHistory.insert(requestHistory.end(), conversationHistory_.begin(), conversationHistory_.end());
+    SendChatRequestAsync(std::move(requestHistory));
 }
 
 void MainWindow::OnAiResponse(const AiResponsePayload& payload) {

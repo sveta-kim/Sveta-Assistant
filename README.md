@@ -7,7 +7,8 @@ Windows Desktop AI Companion / Interactive Character Platform.
 
 Phase 0(Foundation), Phase 1(Desktop Character), Phase 2(Interaction),
 Phase 3(Character Life), Phase 4(AI Conversation), Phase 5(Voice — TTS만,
-아래 참고), Phase 6(Desktop Context — 아래 참고) 완료:
+아래 참고), Phase 6(Desktop Context — 아래 참고), Phase 7(Proactive AI —
+아래 참고) 완료:
 
 - 테두리 없음, 항상 위, 픽셀 단위로 투명한 창에 PNG 스프라이트를
   (WIC로 디코딩해) 렌더링
@@ -29,8 +30,9 @@ Phase 3(Character Life), Phase 4(AI Conversation), Phase 5(Voice — TTS만,
     (Sveta는 쓰다듬으면 기뻐한다는 기획서 8장 캐릭터별 반응 반영),
     드래그 시작 → Surprised + Dragged, 진행 중이던 리액션은 드래그가
     가로챔
-  - 60초간 상호작용 없으면 Sleeping/Sleepy로 전환, 커서가 다시
-    다가오면 기상 (기획서 6장 시나리오)
+  - 5분간 상호작용 없으면 Sleeping/Sleepy로 전환, 커서가 다시
+    다가오면 기상 (기획서 6장 시나리오) — 처음엔 60초였는데 정상적으로
+    작업하다가도 계속 잠들어서 5분으로 늘림
   - 1초 간격 타이머로 `behavior/IdleBehavior`가 성격 가중치를 반영해
     Idle 상태에서 확률적으로 행동 선택(LookAround/Blink/Yawn/
     Stretch/Move/SitAtBottom/Read/Drink/Doze/PlayWithItem, 기획서
@@ -226,7 +228,7 @@ Game Integration처럼 게임 SDK 훅을 붙이는 건 아니고, 지금 하고 
   `playing_game.png`를 새로 만들었다 — 지금까지와 같은 방식으로
   `calm.png` 위에 게임패드 아이콘을 절차적으로 합성(240px로 축소돼도
   잘 읽히도록 디테일은 최소화: 알약 모양 몸체 + 큰 원 2개)
-- 게임 중엔 60초 Idle-to-sleep 타임아웃과 랜덤 Idle 행동(책 읽기,
+- 게임 중엔 5분 Idle-to-sleep 타임아웃과 랜덤 Idle 행동(책 읽기,
   마시기 등)이 멈추고 `PlayingGame` 포즈를 유지한다. 그래도 호버/
   쓰다듬기/드래그/채팅은 그대로 우선권을 가져서, 게임 중에 캐릭터를
   건드리면 평소처럼 반응하고 손을 떼면 다시 게임 포즈로 돌아간다
@@ -237,13 +239,48 @@ Game Integration처럼 게임 SDK 훅을 붙이는 건 아니고, 지금 하고 
   `Idle`/`Calm`으로 정확히 돌아오는 것도 확인했다 — 확인 끝나고
   `notepad.exe`는 목록에서 다시 뺐다
 
-다음은 Phase 7(Proactive AI)이나, 다른 머신에서 STT까지 마저 할지
-선택.
+**선제적 발화(Proactive AI)**도 붙었다 (기획서 18장 Proactive Assistant):
+
+- 캐릭터가 사용자 질문을 기다리지 않고 특정 상황에서 먼저 말을 걸 수
+  있다. 다만 방해를 최소화하려고 기획서가 정의한 Interruption Score
+  표(`proactive/InterruptionScore`)를 그대로 가져왔다 — 일반 화면 변경
+  0.05, 앱 실행 0.10, 작업 성공 0.30, 새 오류 0.60, 동일 오류 반복
+  0.82, 중대한 문제 0.95, 기본 Threshold 0.75. 지금 인프라(창 제목 +
+  얕은 UI Automation 텍스트, 빌드 시스템/IDE 연동 없음)로 신뢰성 있게
+  구분할 수 있는 건 "동일 오류 반복"뿐이라, **이번엔 그 트리거 하나만
+  구현**했다 — 나머지는 표만 코드에 남겨뒀고 다음에 트리거를 추가할 때
+  참고하라고 남겨둔 것
+- `proactive/ErrorRepeatDetector`가 활성 창의 제목+얕은 UI 텍스트에서
+  오류 키워드(error/exception/failed/fatal/crash/오류/실패/에러)를
+  찾고, 같은 신호(제목+텍스트 조합)가 "화면에서 사라졌다가 다시
+  나타나면" 반복으로 판정한다 — 같은 오류 창이 그냥 계속 떠 있는 것과
+  구분하기 위해 "떠난 뒤 재등장"만 카운트함
+- 반복이 감지되면 `ContextEngine`이 상황 설명을 한 문장으로 만들고,
+  `MainWindow::StartProactiveSpeech()`가 사용자 메시지 없이(페르소나
+  시스템 프롬프트 + 상황 설명만으로) 실제 AI를 호출한다 — 채팅
+  흐름(`OnMessageSubmitted`)과 같은 네트워크 코드를
+  `SendChatRequestAsync()`로 공유. 응답은 평소 채팅 응답과 똑같이
+  말풍선 + TTS로 나온다
+- 스팸 방지로 10분 쿨다운(`kProactiveCooldown`, UX 튜닝 전 임시값)을
+  뒀고, 이미 채팅 중이거나 말풍선이 떠 있으면 트리거 자체를 건너뛴다
+- 검증: 실제 창 제목을 직접 지정할 수 있는 작은 테스트 창을 하나
+  만들어서(메모장은 Windows 11에서 탭형이라 창 제목이 파일명을 안
+  보여줘서 이 방법을 씀) "test error window"라는 제목으로 두 번
+  띄웠더니(중간에 딴 창으로 전환), 로그에 `same error repeated
+  (score=0.82 >= threshold=0.75)` → `Proactive speech triggered` →
+  실제 AI POST(200) → `Action -> Talking` → 실제 TTS 재생 11초 →
+  자동 종료까지 정확히 찍히는 것을 확인했다. 탐지 알고리즘 자체는
+  별도로 4가지 시나리오(기본 반복, 서로 다른 오류가 오탐 안 나는지,
+  일반 텍스트에서 오탐 안 나는지, 한글 키워드)로 독립 컴파일해서
+  단위 테스트도 통과시켰다
+
+다른 머신에서 STT까지 마저 할지가 다음 선택지.
 
 머리 히트박스는 현재 스프라이트 크기에 비례한 근사치(상단 50%,
 가운데 72% 너비)다. 캐릭터마다 다른 정확한 히트박스는 추후
 Character Package(character.json, 기획서 24~25장)에서 다룰 예정.
-Idle-to-sleep 60초 타임아웃도 UX 튜닝 전 임시값이다.
+Idle-to-sleep 타임아웃(현재 5분)도 정식 UX 튜닝 전 값이다 — 60초였을 땐
+정상 작업 중에도 계속 잠들어서 5분으로 늘렸다.
 
 남은 과제: 아직 DPI 인식 매니페스트가 없어서, 앱 자신이 보는 창 좌표와
 DPI를 인식하는 외부 도구가 보는 좌표가 다를 수 있다. 앱 자체의
@@ -299,6 +336,7 @@ src/
   content/      캐릭터/아이템/가구 패키지 로딩
   items/        인터랙티브 소품
   context/      데스크톱 인식(활성 창 추적, UI Automation 얕은 텍스트 읽기)
+  proactive/    선제적 발화(Interruption Score, 동일 오류 반복 감지)
   ai/           AI 엔진 연동 (대화, 비전)
   memory/       세션/일간/장기 기억
   audio/        TTS (SAPI); STT는 이 머신에 언어 인식 모델이 없어서 보류

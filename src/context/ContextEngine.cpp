@@ -6,6 +6,7 @@
 #include "context/UiAutomationReader.h"
 #include "core/Logger.h"
 #include "core/StringConvert.h"
+#include "proactive/InterruptionScore.h"
 
 namespace sveta::context {
 
@@ -114,6 +115,30 @@ void ContextEngine::OnSnapshotMessage(LPARAM lParam) {
     current_.uiText = snapshot->uiText;
     core::Logger::Info(std::format(
         "ContextEngine: UI Automation text captured ({} chars)", current_.uiText.size()));
+
+    if (errorRepeatDetector_.Observe(current_.windowTitle, current_.uiText)) {
+        pendingSameErrorRepeatedEvent_ = true;
+        core::Logger::Info(std::format(
+            "ContextEngine: same error repeated (score={:.2f} >= threshold={:.2f}) -> proactive candidate",
+            proactive::InterruptionScore(proactive::ProactiveEvent::SameErrorRepeated), proactive::kInterruptionThreshold));
+    }
+}
+
+std::optional<std::wstring> ContextEngine::ConsumeSameErrorRepeatedEvent() {
+    if (!pendingSameErrorRepeatedEvent_) {
+        return std::nullopt;
+    }
+    pendingSameErrorRepeatedEvent_ = false;
+
+    std::wstring description = L"(사용자가 방금 전과 같은 오류를 다시 마주친 것 같다: \"" + current_.windowTitle + L"\"";
+    if (!current_.processName.empty()) {
+        description += L" (" + current_.processName + L")";
+    }
+    description += L". 화면에 보이는 내용: " + current_.uiText + L". ";
+    description +=
+        L"사용자가 직접 물어본 건 아니지만, 네가 먼저 짧게 한마디 건네보자 — 너무 참견하는 "
+        L"느낌은 피하고 네 성격을 살려서 자연스럽게 말해줘.)";
+    return description;
 }
 
 std::wstring ContextEngine::BuildContextLine() const {

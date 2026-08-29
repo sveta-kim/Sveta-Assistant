@@ -3,12 +3,14 @@
 #include <windows.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "context/ActiveWindowTracker.h"
 #include "context/GameDetector.h"
 #include "context/PrivacyConfig.h"
+#include "proactive/ErrorRepeatDetector.h"
 
 namespace sveta::context {
 
@@ -49,6 +51,14 @@ public:
     // applies the background thread's result.
     void OnSnapshotMessage(LPARAM lParam);
 
+    // One-shot: non-empty exactly once, right after project plan section
+    // 18's "동일 오류 반복" heuristic fires (see proactive::ErrorRepeatDetector),
+    // as a ready-to-use situation description for a proactive AI system
+    // message. Clears itself so MainWindow's tick won't re-trigger on the
+    // next poll. Empty (and this event never fires) while screen awareness
+    // is off or the active process is excluded, same as BuildContextLine.
+    std::optional<std::wstring> ConsumeSameErrorRepeatedEvent();
+
     // Current best-known context as one short line for the AI system
     // prompt, e.g. "(사용자는 지금 devenv.exe 창(...)을 보고 있다)".
     // Empty if disabled, nothing tracked yet, or the active app is excluded.
@@ -65,11 +75,13 @@ private:
     UINT notifyMessage_;
     PrivacyConfig privacy_;
     GameDetector gameDetector_;
+    proactive::ErrorRepeatDetector errorRepeatDetector_;
 
     ContextSnapshot current_;
     bool hasSnapshot_ = false;
     int currentGeneration_ = 0;
     bool isGaming_ = false;
+    bool pendingSameErrorRepeatedEvent_ = false;
 };
 
 } // namespace sveta::context
