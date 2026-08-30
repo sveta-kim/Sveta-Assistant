@@ -12,3 +12,4 @@ CMakeFiles/
 cmake_install.cmake
 CMakeUserPresets.json
 config/secrets.local.json
+config/google_service_account.json

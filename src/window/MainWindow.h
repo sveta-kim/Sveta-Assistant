@@ -10,7 +10,7 @@
 
 #include "ai/AiConfig.h"
 #include "ai/ChatClient.h"
-#include "audio/TextToSpeech.h"
+#include "audio/ITextToSpeech.h"
 #include "character/CharacterState.h"
 #include "context/ContextEngine.h"
 #include "interaction/PettingDetector.h"
@@ -92,7 +92,7 @@ private:
     std::vector<ai::ChatMessage> conversationHistory_;
     bool conversationInFlight_ = false;
 
-    std::unique_ptr<audio::TextToSpeech> textToSpeech_;
+    std::unique_ptr<audio::ITextToSpeech> textToSpeech_;
     bool isSpeaking_ = false;
     bool mouthFrameToggle_ = false;
     // True from the moment a response bubble starts speaking until either

@@ -29,6 +29,11 @@ Language DetectLanguage(const std::wstring& text);
 // machine — see README for which of the 7 are voice-verified here.
 std::wstring VoiceLcidQuery(Language language);
 
+// Google Cloud TTS languageCode for this language, e.g. "ko-KR" — used by
+// GoogleTextToSpeech alongside the per-language voice name configured in
+// config/tts_config.json.
+std::string_view GoogleLanguageCode(Language language);
+
 std::string_view ToString(Language language);
 
 } // namespace sveta::audio

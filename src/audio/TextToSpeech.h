@@ -6,6 +6,8 @@
 #include <memory>
 #include <string>
 
+#include "audio/ITextToSpeech.h"
+
 struct ISpVoice; // avoid pulling <sapi.h> into every includer
 
 namespace sveta::audio {
@@ -16,24 +18,20 @@ namespace sveta::audio {
 // Voice choice is picked per-utterance based on whether the text looks
 // like it contains Hangul, since per-character Voice Profiles (project
 // plan sections 21, 25) don't exist yet.
-class TextToSpeech {
+class TextToSpeech : public ITextToSpeech {
 public:
     static std::unique_ptr<TextToSpeech> Create(HWND notifyWindow, UINT notifyMessage);
-    ~TextToSpeech();
+    ~TextToSpeech() override;
 
     TextToSpeech(const TextToSpeech&) = delete;
     TextToSpeech& operator=(const TextToSpeech&) = delete;
 
-    void Speak(const std::wstring& text);
-    void Stop();
+    void Speak(const std::wstring& text) override;
+    void Stop() override;
 
-    struct EventResult {
-        bool started = false;
-        bool ended = false;
-    };
-    // Call when notifyMessage arrives at the notify window; drains SAPI's
-    // event queue and reports which of start/end occurred since the last call.
-    EventResult PumpEvents();
+    // Drains SAPI's event queue and reports which of start/end occurred
+    // since the last call.
+    EventResult PumpEvents() override;
 
 private:
     explicit TextToSpeech(Microsoft::WRL::ComPtr<ISpVoice> voice);

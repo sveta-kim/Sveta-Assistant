@@ -98,6 +98,19 @@ std::wstring VoiceLcidQuery(Language language) {
     return L"Language=409";
 }
 
+std::string_view GoogleLanguageCode(Language language) {
+    switch (language) {
+        case Language::Korean: return "ko-KR";
+        case Language::Japanese: return "ja-JP";
+        case Language::Chinese: return "cmn-CN"; // Mandarin -- Google's TTS code for it, not zh-CN
+        case Language::Russian: return "ru-RU";
+        case Language::German: return "de-DE";
+        case Language::Spanish: return "es-ES";
+        case Language::English: return "en-US";
+    }
+    return "en-US";
+}
+
 std::string_view ToString(Language language) {
     switch (language) {
         case Language::Korean: return "Korean";

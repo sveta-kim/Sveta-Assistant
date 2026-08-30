@@ -10,6 +10,7 @@
 
 #include "ai/Persona.h"
 #include "audio/SpeakableText.h"
+#include "audio/TextToSpeechFactory.h"
 #include "context/LeagueLiveClient.h"
 #include "core/Logger.h"
 #include "core/StringConvert.h"
@@ -142,7 +143,7 @@ std::unique_ptr<MainWindow> MainWindow::Create(HINSTANCE instance) {
         core::Logger::Warn("AI chat is not configured yet; double-click will show a placeholder reply");
     }
 
-    window->textToSpeech_ = audio::TextToSpeech::Create(hwnd, kTtsEventMessage);
+    window->textToSpeech_ = audio::CreateTextToSpeech(hwnd, kTtsEventMessage);
     if (!window->textToSpeech_) {
         core::Logger::Warn("Text-to-speech unavailable; replies will be text-only");
     }
@@ -475,7 +476,7 @@ void MainWindow::HandleTtsEvent() {
     if (!textToSpeech_) {
         return;
     }
-    const audio::TextToSpeech::EventResult result = textToSpeech_->PumpEvents();
+    const audio::ITextToSpeech::EventResult result = textToSpeech_->PumpEvents();
     core::Logger::Info(std::format("TTS event: started={} ended={}", result.started, result.ended));
 
     if (result.started && !isSpeaking_) {

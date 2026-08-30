@@ -3,9 +3,14 @@ add_executable(SvetaAssistant WIN32
     ai/ChatClient.cpp
     ai/Persona.cpp
     app/main.cpp
+    audio/GoogleOAuthTokenProvider.cpp
+    audio/GoogleServiceAccount.cpp
+    audio/GoogleTextToSpeech.cpp
+    audio/GoogleTtsConfig.cpp
     audio/LanguageDetection.cpp
     audio/SpeakableText.cpp
     audio/TextToSpeech.cpp
+    audio/TextToSpeechFactory.cpp
     behavior/IdleBehavior.cpp
     character/Action.cpp
     character/CharacterState.cpp
@@ -48,6 +53,9 @@ target_link_libraries(SvetaAssistant PRIVATE
     comctl32
     gdiplus
     advapi32
+    crypt32
+    winmm
+    bcrypt
 )
 
 if(MSVC)
