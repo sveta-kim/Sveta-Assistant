@@ -1,16 +1,28 @@
 #include "context/GameDetector.h"
 
+#include <cstdlib>
 #include <filesystem>
+#include <format>
 #include <fstream>
+#include <thread>
 
 #include <nlohmann/json.hpp>
 
+#include "context/EpicLibraryScanner.h"
+#include "context/SteamLibraryScanner.h"
 #include "core/Logger.h"
 #include "core/StringConvert.h"
 
 namespace sveta::context {
 
 namespace {
+
+// Real games observed off by a few pixels on every edge from the
+// monitor's true bounds -- this app has no DPI-awareness manifest yet
+// (see README), so coordinates it reads back can be off from another
+// window's real ones by DPI-virtualization rounding. Exact-match used to
+// reject genuinely fullscreen games for this reason.
+constexpr int kMonitorMatchTolerancePx = 8;
 
 bool IsFullscreenExclusive(HWND hwnd) {
     if (!hwnd) {
@@ -29,17 +41,20 @@ bool IsFullscreenExclusive(HWND hwnd) {
         return false;
     }
 
-    const bool coversMonitor = windowRect.left == monitorInfo.rcMonitor.left &&
-        windowRect.top == monitorInfo.rcMonitor.top && windowRect.right == monitorInfo.rcMonitor.right &&
-        windowRect.bottom == monitorInfo.rcMonitor.bottom;
-    if (!coversMonitor) {
-        return false;
-    }
-
-    // A maximized normal window (browser, IDE) still covers the monitor
-    // but keeps WS_CAPTION; borderless-fullscreen games drop it.
-    const LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_STYLE);
-    return (style & WS_CAPTION) == 0;
+    // Compared against the full monitor rect (taskbar included), not the
+    // work area -- a normal maximized window (browser, IDE) snaps to the
+    // work area and stays short of this, while an exclusive/borderless
+    // fullscreen game deliberately covers the whole monitor. That
+    // distinction alone is what's actually reliable; a real game's
+    // WS_CAPTION bit was observed still set despite being visually
+    // fullscreen, so that used to be checked too and isn't anymore.
+    // (Known false-positive case: a normal window maximized with the
+    // taskbar set to auto-hide looks the same as this.)
+    const auto within = [](int a, int b) { return std::abs(a - b) <= kMonitorMatchTolerancePx; };
+    return within(windowRect.left, monitorInfo.rcMonitor.left) &&
+        within(windowRect.top, monitorInfo.rcMonitor.top) &&
+        within(windowRect.right, monitorInfo.rcMonitor.right) &&
+        within(windowRect.bottom, monitorInfo.rcMonitor.bottom);
 }
 
 } // namespace
@@ -68,7 +83,29 @@ GamesConfig GamesConfig::Load() {
     return config;
 }
 
-GameDetector::GameDetector() : config_(GamesConfig::Load()) {}
+GameDetector::GameDetector() : config_(GamesConfig::Load()) {
+    std::thread([state = libraryScanState_]() {
+        const std::vector<SteamGame> steamGames = ScanInstalledSteamGames();
+        const std::vector<EpicGame> epicGames = ScanInstalledEpicGames();
+
+        std::vector<std::wstring> exeNames;
+        exeNames.reserve(steamGames.size() + epicGames.size());
+        for (const auto& game : steamGames) {
+            exeNames.push_back(game.exeName);
+        }
+        for (const auto& game : epicGames) {
+            exeNames.push_back(game.exeName);
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(state->mutex);
+            state->processNames = std::move(exeNames);
+        }
+        core::Logger::Info(std::format(
+            "GameDetector: library scan found {} Steam + {} Epic game executable(s)", steamGames.size(),
+            epicGames.size()));
+    }).detach();
+}
 
 bool GameDetector::IsLikelyGame(const std::wstring& processName, HWND hwnd) const {
     for (const auto& known : config_.knownProcessNames) {
@@ -76,6 +113,16 @@ bool GameDetector::IsLikelyGame(const std::wstring& processName, HWND hwnd) cons
             return true;
         }
     }
+
+    {
+        std::lock_guard<std::mutex> lock(libraryScanState_->mutex);
+        for (const auto& known : libraryScanState_->processNames) {
+            if (_wcsicmp(known.c_str(), processName.c_str()) == 0) {
+                return true;
+            }
+        }
+    }
+
     return IsFullscreenExclusive(hwnd);
 }
 

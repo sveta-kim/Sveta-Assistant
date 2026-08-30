@@ -10,6 +10,7 @@
 
 #include "ai/Persona.h"
 #include "audio/SpeakableText.h"
+#include "context/LeagueLiveClient.h"
 #include "core/Logger.h"
 #include "core/StringConvert.h"
 #include "interaction/HeadHitbox.h"
@@ -379,7 +380,17 @@ void MainWindow::SendChatRequestAsync(std::vector<ai::ChatMessage> requestHistor
     const ai::AiConfig config = *aiConfig_;
     const HWND hwnd = hwnd_;
 
-    std::thread([config, requestHistory = std::move(requestHistory), hwnd]() {
+    std::thread([config, requestHistory = std::move(requestHistory), hwnd]() mutable {
+        // Safe to always attempt: FetchLeagueLiveMatchState itself checks
+        // the foreground process before touching the network, so this is
+        // a cheap no-op for every message except while actually in a
+        // League of Legends match.
+        if (const auto leagueState = context::FetchLeagueLiveMatchState()) {
+            requestHistory.insert(
+                requestHistory.begin() + 1,
+                ai::ChatMessage{"system", core::WideToUtf8(context::BuildLeagueContextLine(*leagueState))});
+        }
+
         const ai::ChatClient client(config);
         const ai::ChatResult result = client.Send(requestHistory);
 

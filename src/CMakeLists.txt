@@ -13,8 +13,11 @@ add_executable(SvetaAssistant WIN32
     character/Personality.cpp
     context/ActiveWindowTracker.cpp
     context/ContextEngine.cpp
+    context/EpicLibraryScanner.cpp
     context/GameDetector.cpp
+    context/LeagueLiveClient.cpp
     context/PrivacyConfig.cpp
+    context/SteamLibraryScanner.cpp
     context/UiAutomationReader.cpp
     core/Logger.cpp
     core/Paths.cpp
@@ -44,6 +47,7 @@ target_link_libraries(SvetaAssistant PRIVATE
     winhttp
     comctl32
     gdiplus
+    advapi32
 )
 
 if(MSVC)

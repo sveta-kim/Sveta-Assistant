@@ -2,6 +2,8 @@
 
 #include <windows.h>
 
+#include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -22,15 +24,29 @@ class GameDetector {
 public:
     GameDetector();
 
-    // True if processName matches the known-games list, OR hwnd looks like
-    // a borderless-fullscreen window (covers its monitor exactly, no
-    // WS_CAPTION) — most games run one way or the other; a maximized
-    // normal app (browser, IDE) still has window chrome and fails the
-    // second check.
+    // True if processName matches the known-games list or the installed
+    // Steam/Epic library (see SteamLibraryScanner, EpicLibraryScanner), OR
+    // hwnd looks like a borderless-fullscreen window (covers its monitor,
+    // taskbar area included) — most games run one way or the other; a
+    // normal maximized app (browser, IDE) stays within the work area and
+    // fails that check.
     bool IsLikelyGame(const std::wstring& processName, HWND hwnd) const;
 
 private:
     GamesConfig config_;
+
+    // The Steam/Epic library scans involve real filesystem I/O across
+    // every installed game's folder, so they run on a background thread
+    // started from the constructor. This shared, mutex-guarded cell
+    // (rather than capturing `this`) is what lets that thread safely hand
+    // results back even if the GameDetector itself is destroyed first —
+    // same shared_ptr-indirection idiom ContextEngine::Create uses for
+    // its tracker callback.
+    struct LibraryScanState {
+        std::mutex mutex;
+        std::vector<std::wstring> processNames;
+    };
+    std::shared_ptr<LibraryScanState> libraryScanState_ = std::make_shared<LibraryScanState>();
 };
 
 } // namespace sveta::context
