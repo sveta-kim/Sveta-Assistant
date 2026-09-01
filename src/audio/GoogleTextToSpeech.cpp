@@ -5,6 +5,7 @@
 #include <winhttp.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <format>
 #include <optional>
@@ -25,6 +26,14 @@ constexpr DWORD kTimeoutMs = 15000;
 constexpr wchar_t kHost[] = L"texttospeech.googleapis.com";
 constexpr wchar_t kPath[] = L"/v1/text:synthesize";
 constexpr int kFallbackDurationMs = 3000; // used only if the WAV header can't be parsed
+
+// Cloud TTS's audioConfig.volumeGainDb is a gain in decibels (0 = normal,
+// negative = quieter), not a percentage — convert using the standard
+// amplitude-to-dB formula (50% ~= -6dB, matching what "half as loud"
+// perceptually means) so tts_config.json's volume_percent stays intuitive.
+double VolumePercentToGainDb(int percent) {
+    return 20.0 * std::log10(static_cast<double>(std::clamp(percent, 1, 100)) / 100.0);
+}
 
 class WinHttpHandle {
 public:
@@ -108,6 +117,9 @@ std::optional<std::vector<BYTE>> FetchSynthesizedAudio(
     body["voice"]["languageCode"] = std::string(GoogleLanguageCode(language));
     body["voice"]["name"] = voiceIt->second;
     body["audioConfig"]["audioEncoding"] = "LINEAR16";
+    if (config.volumePercent != 100) {
+        body["audioConfig"]["volumeGainDb"] = VolumePercentToGainDb(config.volumePercent);
+    }
     const std::string bodyStr = body.dump();
 
     WinHttpHandle session(WinHttpOpen(

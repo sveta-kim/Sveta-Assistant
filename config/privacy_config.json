@@ -1,4 +1,6 @@
 {
-    "screen_awareness_enabled": true,
-    "excluded_processes": []
+    "excluded_processes": [],
+    "game_detection_enabled": true,
+    "proactive_speech_enabled": true,
+    "screen_awareness_enabled": true
 }

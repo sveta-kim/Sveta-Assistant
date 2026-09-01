@@ -9,9 +9,12 @@
 #include <thread>
 
 #include "ai/Persona.h"
+#include "ai/UserProfile.h"
+#include "audio/GoogleTtsConfig.h"
 #include "audio/SpeakableText.h"
 #include "audio/TextToSpeechFactory.h"
 #include "context/LeagueLiveClient.h"
+#include "context/PrivacyConfig.h"
 #include "core/Logger.h"
 #include "core/StringConvert.h"
 #include "interaction/HeadHitbox.h"
@@ -39,6 +42,13 @@ constexpr UINT kTtsEventMessage = WM_APP + 2;
 // Posted by ContextEngine's background UI Automation read with a
 // ContextSnapshot* in lParam.
 constexpr UINT kContextSnapshotMessage = WM_APP + 3;
+// Posted by Shell_NotifyIcon on tray icon mouse events; lParam carries the
+// mouse message (WM_RBUTTONUP, WM_CONTEXTMENU, etc.), see TrayIcon.h.
+constexpr UINT kTrayIconMessage = WM_APP + 4;
+
+constexpr UINT_PTR kMenuIdTogglePause = 1;
+constexpr UINT_PTR kMenuIdExit = 2;
+constexpr UINT_PTR kMenuIdSettings = 3;
 
 constexpr size_t kMaxHistoryMessages = 20;
 
@@ -142,6 +152,12 @@ std::unique_ptr<MainWindow> MainWindow::Create(HINSTANCE instance) {
     if (!window->aiConfig_ || !window->aiConfig_->IsUsable()) {
         core::Logger::Warn("AI chat is not configured yet; double-click will show a placeholder reply");
     }
+    {
+        const ai::UserProfile profile = ai::UserProfile::Load();
+        window->userName_ = profile.userName;
+        window->relationshipNote_ = profile.relationshipNote;
+        window->primaryLanguage_ = profile.primaryLanguage;
+    }
 
     window->textToSpeech_ = audio::CreateTextToSpeech(hwnd, kTtsEventMessage);
     if (!window->textToSpeech_) {
@@ -152,6 +168,14 @@ std::unique_ptr<MainWindow> MainWindow::Create(HINSTANCE instance) {
     if (!window->contextEngine_) {
         core::Logger::Warn("Desktop awareness unavailable; chat won't know what's on screen");
     }
+
+    window->trayIcon_ = TrayIcon::Create(
+        hwnd, kTrayIconMessage, std::filesystem::path(SVETA_CONTENT_DIR) / L"face.png", L"Sveta Assistant");
+
+    MainWindow* windowPtr = window.get();
+    window->settingsWindow_ = SettingsWindow::Create(
+        instance, [windowPtr](const SettingsValues& values) { windowPtr->OnSettingsSaved(values); },
+        [windowPtr]() { windowPtr->ResetCharacterPosition(); });
 
     ShowWindow(hwnd, SW_SHOW);
     SetTimer(hwnd, kCharacterTickTimerId, kCharacterTickIntervalMs, nullptr);
@@ -364,7 +388,7 @@ void MainWindow::OnMessageSubmitted(const std::wstring& message) {
     }
 
     std::vector<ai::ChatMessage> requestHistory;
-    requestHistory.push_back({"system", ai::BuildSystemPrompt(characterState_.GetPersonality())});
+    requestHistory.push_back({"system", ai::BuildSystemPrompt(characterState_.GetPersonality(), userName_, relationshipNote_, primaryLanguage_)});
     if (contextEngine_) {
         const std::wstring contextLine = contextEngine_->BuildContextLine();
         if (!contextLine.empty()) {
@@ -421,7 +445,7 @@ void MainWindow::StartProactiveSpeech(const std::wstring& situationDescription) 
     chatBubble_->ShowThinking(ComputeBubbleAnchor());
 
     std::vector<ai::ChatMessage> requestHistory;
-    requestHistory.push_back({"system", ai::BuildSystemPrompt(characterState_.GetPersonality())});
+    requestHistory.push_back({"system", ai::BuildSystemPrompt(characterState_.GetPersonality(), userName_, relationshipNote_, primaryLanguage_)});
     requestHistory.push_back({"system", core::WideToUtf8(situationDescription)});
     requestHistory.insert(requestHistory.end(), conversationHistory_.begin(), conversationHistory_.end());
     SendChatRequestAsync(std::move(requestHistory));
@@ -433,6 +457,7 @@ void MainWindow::OnAiResponse(const AiResponsePayload& payload) {
     characterState_.OnTalking(std::chrono::steady_clock::now());
     SyncSpriteToEmotion();
 
+    bool willSpeak = false;
     if (payload.success) {
         conversationHistory_.push_back({"assistant", core::WideToUtf8(payload.text)});
         // Cap history length; Phase 8 (Memory System) replaces this with
@@ -443,15 +468,28 @@ void MainWindow::OnAiResponse(const AiResponsePayload& payload) {
                 conversationHistory_.begin() + (conversationHistory_.size() - kMaxHistoryMessages));
         }
         if (textToSpeech_) {
-            core::Logger::Info("TTS: Speak() called");
-            // The bubble still shows payload.text as-is; only what's
-            // spoken gets Markdown/emoji stripped.
-            textToSpeech_->Speak(audio::MakeSpeakable(payload.text));
-            awaitingSpeechEndForDismiss_ = true;
+            // What's spoken gets Markdown/emoji stripped (and tildes eased
+            // into pauses). A reply that's nothing but emoji/symbols can
+            // strip down to empty — Speak() no-ops on that and never posts
+            // a started/ended event, so don't claim we'll speak
+            // (ShowResponse would then wait out the long TTS-safety-net
+            // timer for nothing).
+            const std::wstring speakable = audio::MakeSpeakable(payload.text);
+            if (!speakable.empty()) {
+                core::Logger::Info("TTS: Speak() called");
+                textToSpeech_->Speak(speakable);
+                awaitingSpeechEndForDismiss_ = true;
+                willSpeak = true;
+            }
         }
     }
 
-    chatBubble_->ShowResponse(ComputeBubbleAnchor(), payload.text, [this]() { OnChatDismissed(); });
+    // The bubble keeps Markdown as typed (harmless to display) but still
+    // needs emoji stripped: GDI+'s "Segoe UI" font has no color-emoji
+    // glyphs, so any emoji would otherwise draw as a broken "tofu" box.
+    // conversationHistory_ above keeps the untouched original text.
+    const std::wstring displayText = audio::StripUnrenderableSymbols(payload.text);
+    chatBubble_->ShowResponse(ComputeBubbleAnchor(), displayText, [this]() { OnChatDismissed(); }, willSpeak);
 }
 
 void MainWindow::OnChatDismissed() {
@@ -499,6 +537,116 @@ void MainWindow::HandleTtsEvent() {
             chatBubble_->RescheduleDismiss(kPostSpeechGraceMs, [this]() { OnChatDismissed(); });
         }
     }
+}
+
+void MainWindow::ShowTrayMenu() {
+    POINT cursor{};
+    GetCursorPos(&cursor);
+
+    const HMENU menu = CreatePopupMenu();
+    AppendMenuW(menu, MF_STRING, kMenuIdSettings, L"설정");
+    AppendMenuW(menu, MF_STRING, kMenuIdTogglePause, isPaused_ ? L"다시 보이기" : L"일시정지");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, kMenuIdExit, L"종료");
+
+    // Standard TrackPopupMenu idiom: the window must be foreground or the
+    // menu won't dismiss on an outside click, and a trailing WM_NULL works
+    // around a well-known Windows quirk where the menu can otherwise stick.
+    SetForegroundWindow(hwnd_);
+    TrackPopupMenu(menu, TPM_RIGHTBUTTON, cursor.x, cursor.y, 0, hwnd_, nullptr);
+    PostMessageW(hwnd_, WM_NULL, 0, 0);
+
+    DestroyMenu(menu);
+}
+
+void MainWindow::TogglePause() {
+    isPaused_ = !isPaused_;
+    if (isPaused_) {
+        if (chatBubble_) {
+            chatBubble_->Hide();
+        }
+        if (textToSpeech_) {
+            textToSpeech_->Stop();
+        }
+        KillTimer(hwnd_, kCharacterTickTimerId);
+        ShowWindow(hwnd_, SW_HIDE);
+        core::Logger::Info("MainWindow: paused via tray menu");
+    } else {
+        ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
+        SetTimer(hwnd_, kCharacterTickTimerId, kCharacterTickIntervalMs, nullptr);
+        SyncSpriteToEmotion();
+        core::Logger::Info("MainWindow: resumed via tray menu");
+    }
+}
+
+SettingsValues MainWindow::BuildCurrentSettingsValues() const {
+    SettingsValues values;
+    values.userName = userName_;
+    values.relationshipNote = relationshipNote_;
+    values.primaryLanguage = primaryLanguage_;
+    // uiLanguage isn't cached on MainWindow (nothing else needs it), so
+    // read it fresh here rather than adding a member just to shuttle it.
+    values.uiLanguage = ai::UserProfile::Load().uiLanguage;
+    const audio::GoogleTtsConfig ttsConfig = audio::GoogleTtsConfig::Load();
+    values.ttsProvider = ttsConfig.provider;
+    values.volumePercent = ttsConfig.volumePercent;
+    values.voicesByLanguage = ttsConfig.voicesByLanguage;
+
+    const context::PrivacyConfig privacyConfig = context::PrivacyConfig::Load();
+    values.proactiveSpeechEnabled = privacyConfig.proactiveSpeechEnabled;
+    values.gameDetectionEnabled = privacyConfig.gameDetectionEnabled;
+    return values;
+}
+
+void MainWindow::OpenSettings() {
+    if (settingsWindow_) {
+        settingsWindow_->ShowWithValues(BuildCurrentSettingsValues());
+    }
+}
+
+void MainWindow::OnSettingsSaved(const SettingsValues& values) {
+    userName_ = values.userName;
+    relationshipNote_ = values.relationshipNote;
+    primaryLanguage_ = values.primaryLanguage;
+    ai::UserProfile{values.userName, values.relationshipNote, values.primaryLanguage, values.uiLanguage}.Save();
+
+    // Reloaded fresh (not just re-using BuildCurrentSettingsValues' result)
+    // so fields the Settings window doesn't expose -- excluded_processes,
+    // screen_awareness_enabled -- survive the write instead of getting
+    // clobbered with defaults.
+    audio::GoogleTtsConfig ttsConfig = audio::GoogleTtsConfig::Load();
+    ttsConfig.provider = values.ttsProvider;
+    ttsConfig.volumePercent = values.volumePercent;
+    for (const auto& [language, voice] : values.voicesByLanguage) {
+        ttsConfig.voicesByLanguage[language] = voice;
+    }
+    ttsConfig.Save();
+
+    context::PrivacyConfig privacyConfig = context::PrivacyConfig::Load();
+    privacyConfig.proactiveSpeechEnabled = values.proactiveSpeechEnabled;
+    privacyConfig.gameDetectionEnabled = values.gameDetectionEnabled;
+    privacyConfig.Save();
+
+    // Apply live rather than requiring a restart.
+    textToSpeech_ = audio::CreateTextToSpeech(hwnd_, kTtsEventMessage);
+    if (contextEngine_) {
+        contextEngine_->SetProactiveSpeechEnabled(values.proactiveSpeechEnabled);
+        contextEngine_->SetGameDetectionEnabled(values.gameDetectionEnabled);
+    }
+    core::Logger::Info("Settings saved and applied");
+}
+
+void MainWindow::ResetCharacterPosition() {
+    RECT rect{};
+    GetWindowRect(hwnd_, &rect);
+    const POINT position = DefaultPosition(rect.right - rect.left, rect.bottom - rect.top);
+
+    SetWindowPos(hwnd_, nullptr, position.x, position.y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    SaveCurrentPosition();
+    if (chatBubble_ && chatBubble_->IsVisible()) {
+        chatBubble_->Reposition(ComputeBubbleAnchor());
+    }
+    core::Logger::Info("Character position reset via settings");
 }
 
 void MainWindow::HandleMouthAnimationTick() {
@@ -565,6 +713,25 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
                 contextEngine_->OnSnapshotMessage(lParam);
             }
             return 0;
+        case kTrayIconMessage:
+            if (lParam == WM_RBUTTONUP || lParam == WM_CONTEXTMENU) {
+                ShowTrayMenu();
+            }
+            return 0;
+        case WM_COMMAND:
+            switch (LOWORD(wParam)) {
+                case kMenuIdTogglePause:
+                    TogglePause();
+                    return 0;
+                case kMenuIdSettings:
+                    OpenSettings();
+                    return 0;
+                case kMenuIdExit:
+                    DestroyWindow(hwnd_);
+                    return 0;
+                default:
+                    return 0;
+            }
         case WM_ENTERSIZEMOVE:
             // Fired by the caption-move loop the WM_LBUTTONDOWN trick enters.
             characterState_.OnDragStart(std::chrono::steady_clock::now());
@@ -590,6 +757,12 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             PostQuitMessage(0);
             return 0;
         default:
+            // TaskbarCreated's message ID is assigned at runtime
+            // (RegisterWindowMessageW), so it can't be a case label.
+            if (trayIcon_ && message == TrayIcon::TaskbarCreatedMessage()) {
+                trayIcon_->Readd();
+                return 0;
+            }
             return DefWindowProcW(hwnd_, message, wParam, lParam);
     }
 }

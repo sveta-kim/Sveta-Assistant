@@ -1,12 +1,13 @@
 {
-    "provider": "google",
     "google_voices": {
-        "Korean": "ko-KR-Chirp3-HD-Kore",
-        "English": "en-US-Chirp3-HD-Kore",
-        "Japanese": "ja-JP-Chirp3-HD-Kore",
         "Chinese": "cmn-CN-Chirp3-HD-Kore",
-        "Spanish": "es-ES-Chirp3-HD-Kore",
+        "English": "en-US-Chirp3-HD-Kore",
         "German": "de-DE-Chirp3-HD-Kore",
-        "Russian": "ru-RU-Chirp3-HD-Kore"
-    }
+        "Japanese": "ja-JP-Chirp3-HD-Kore",
+        "Korean": "ko-KR-Chirp3-HD-Leda",
+        "Russian": "ru-RU-Chirp3-HD-Kore",
+        "Spanish": "es-ES-Chirp3-HD-Kore"
+    },
+    "provider": "google",
+    "volume_percent": 100
 }

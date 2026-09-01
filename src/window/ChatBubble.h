@@ -33,7 +33,12 @@ public:
     // the character window's horizontal center, top edge).
     void OpenForInput(POINT anchorTop, SubmitCallback onSubmit, DismissCallback onDismiss);
     void ShowThinking(POINT anchorTop);
-    void ShowResponse(POINT anchorTop, const std::wstring& text, DismissCallback onAutoDismiss);
+    // expectsSpokenReply: true if a TTS Speak() call for this text has
+    // already been kicked off. Widens the fallback auto-dismiss timer
+    // (see ShowResponse's .cpp comment) so it acts as a pure safety net
+    // instead of racing real playback and cutting the reply off mid-speech.
+    void ShowResponse(
+        POINT anchorTop, const std::wstring& text, DismissCallback onAutoDismiss, bool expectsSpokenReply = false);
     void Hide();
     bool IsVisible() const;
 
@@ -60,6 +65,8 @@ private:
     void EnterInputMode(POINT anchorTop);
     void EnterStaticMode(POINT anchorTop, const std::wstring& text);
     void PaintStaticBubble(int width, int height, POINT screenPos, const std::wstring& text);
+    void ResizeInputBox(int desiredHeight);
+    void HandleEditTextChanged();
 
     HWND hwnd_;
     HWND edit_;
@@ -67,6 +74,13 @@ private:
     HBRUSH editBackgroundBrush_;
     SubmitCallback onSubmit_;
     DismissCallback onDismiss_;
+
+    // Anchor and current height of the input box, tracked so it can grow
+    // (and reposition upward, staying anchored at the bottom) as the user
+    // types a message long enough to wrap onto more lines. 0 forces
+    // ResizeInputBox to lay out fresh the next time EnterInputMode runs.
+    POINT inputAnchorTop_{};
+    int currentInputHeight_ = 0;
 };
 
 } // namespace sveta::window

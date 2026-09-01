@@ -4,6 +4,7 @@
 #include <sapi.h>
 #include <sphelper.h>
 
+#include <algorithm>
 #include <format>
 
 #include "audio/LanguageDetection.h"
@@ -33,7 +34,7 @@ void SelectVoiceForText(ISpVoice* voice, const std::wstring& text) {
 
 } // namespace
 
-std::unique_ptr<TextToSpeech> TextToSpeech::Create(HWND notifyWindow, UINT notifyMessage) {
+std::unique_ptr<TextToSpeech> TextToSpeech::Create(HWND notifyWindow, UINT notifyMessage, int volumePercent) {
     Microsoft::WRL::ComPtr<ISpVoice> voice;
     const HRESULT hr = CoCreateInstance(CLSID_SpVoice, nullptr, CLSCTX_ALL, IID_PPV_ARGS(&voice));
     if (FAILED(hr)) {
@@ -45,6 +46,7 @@ std::unique_ptr<TextToSpeech> TextToSpeech::Create(HWND notifyWindow, UINT notif
         SPFEI(SPEI_START_INPUT_STREAM) | SPFEI(SPEI_END_INPUT_STREAM),
         SPFEI(SPEI_START_INPUT_STREAM) | SPFEI(SPEI_END_INPUT_STREAM));
     voice->SetNotifyWindowMessage(notifyWindow, notifyMessage, 0, 0);
+    voice->SetVolume(static_cast<USHORT>(std::clamp(volumePercent, 1, 100)));
 
     return std::unique_ptr<TextToSpeech>(new TextToSpeech(std::move(voice)));
 }

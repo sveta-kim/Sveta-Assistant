@@ -20,7 +20,8 @@ namespace sveta::audio {
 // plan sections 21, 25) don't exist yet.
 class TextToSpeech : public ITextToSpeech {
 public:
-    static std::unique_ptr<TextToSpeech> Create(HWND notifyWindow, UINT notifyMessage);
+    // volumePercent: 1-100, forwarded to ISpVoice::SetVolume.
+    static std::unique_ptr<TextToSpeech> Create(HWND notifyWindow, UINT notifyMessage, int volumePercent = 100);
     ~TextToSpeech() override;
 
     TextToSpeech(const TextToSpeech&) = delete;

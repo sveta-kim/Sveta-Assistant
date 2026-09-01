@@ -1,10 +1,5 @@
 #include "audio/TextToSpeechFactory.h"
 
-#include <filesystem>
-#include <fstream>
-
-#include <nlohmann/json.hpp>
-
 #include "audio/GoogleServiceAccount.h"
 #include "audio/GoogleTextToSpeech.h"
 #include "audio/GoogleTtsConfig.h"
@@ -13,30 +8,13 @@
 
 namespace sveta::audio {
 
-namespace {
-
-std::string LoadProvider() {
-    const std::filesystem::path path = std::filesystem::path(SVETA_CONFIG_DIR) / "tts_config.json";
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        return "sapi";
-    }
-    try {
-        nlohmann::json parsed;
-        file >> parsed;
-        return parsed.value("provider", "sapi");
-    } catch (const nlohmann::json::exception& e) {
-        core::Logger::Error(std::string("Failed to parse tts_config.json: ") + e.what());
-        return "sapi";
-    }
-}
-
-} // namespace
-
 std::unique_ptr<ITextToSpeech> CreateTextToSpeech(HWND notifyWindow, UINT notifyMessage) {
-    if (LoadProvider() == "google") {
-        if (auto google = GoogleTextToSpeech::Create(
-                notifyWindow, notifyMessage, GoogleTtsConfig::Load(), GoogleServiceAccount::Load())) {
+    // Loaded once regardless of provider: volume_percent applies to
+    // whichever engine actually ends up speaking.
+    const GoogleTtsConfig config = GoogleTtsConfig::Load();
+
+    if (config.provider == "google") {
+        if (auto google = GoogleTextToSpeech::Create(notifyWindow, notifyMessage, config, GoogleServiceAccount::Load())) {
             core::Logger::Info("TextToSpeech: using Google Cloud TTS (Chirp 3: HD)");
             return google;
         }
@@ -45,7 +23,7 @@ std::unique_ptr<ITextToSpeech> CreateTextToSpeech(HWND notifyWindow, UINT notify
             "incomplete; falling back to local SAPI voices");
     }
 
-    return TextToSpeech::Create(notifyWindow, notifyMessage);
+    return TextToSpeech::Create(notifyWindow, notifyMessage, config.volumePercent);
 }
 
 } // namespace sveta::audio

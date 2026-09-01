@@ -16,6 +16,7 @@ constexpr int kBubbleWidth = 300;
 constexpr int kInputHeight = 46;
 constexpr int kBodyMinHeight = 46;
 constexpr int kBodyMaxHeight = 200;
+constexpr int kInputMaxHeight = kBodyMaxHeight;
 constexpr int kTailHeight = 12;
 constexpr int kTailWidth = 22;
 constexpr int kCornerRadius = 16;
@@ -176,18 +177,49 @@ void ChatBubble::EnterInputMode(POINT anchorTop) {
         SetWindowLongPtrW(hwnd_, GWL_EXSTYLE, exStyle & ~WS_EX_LAYERED);
     }
 
+    // Set the anchor/height before touching the edit control's text: EDIT
+    // controls send EN_CHANGE synchronously from SetWindowTextW, and that
+    // handler (HandleEditTextChanged) reads inputAnchorTop_/currentInputHeight_
+    // to lay the box out, so they must already be correct by then.
+    inputAnchorTop_ = anchorTop;
+    currentInputHeight_ = 0; // force a fresh layout even if it matches the last session's height
+    ResizeInputBox(kInputHeight);
+
     SetWindowTextW(edit_, L"");
     SendMessageW(edit_, EM_SETREADONLY, FALSE, 0);
     ShowWindow(edit_, SW_SHOW);
+}
 
-    const HRGN region = CreateRoundRectRgn(0, 0, kBubbleWidth + 1, kInputHeight + 1, kCornerRadius * 2, kCornerRadius * 2);
+void ChatBubble::ResizeInputBox(int desiredHeight) {
+    const int height = std::clamp(desiredHeight, kInputHeight, kInputMaxHeight);
+    if (height == currentInputHeight_) {
+        return;
+    }
+    currentInputHeight_ = height;
+
+    const HRGN region = CreateRoundRectRgn(0, 0, kBubbleWidth + 1, height + 1, kCornerRadius * 2, kCornerRadius * 2);
     SetWindowRgn(hwnd_, region, FALSE); // ownership of region transfers to the window
 
-    const int x = anchorTop.x - kBubbleWidth / 2;
-    const int y = anchorTop.y - kInputHeight - kGapAboveAnchor;
-    SetWindowPos(hwnd_, HWND_TOPMOST, x, y, kBubbleWidth, kInputHeight, SWP_NOACTIVATE);
-    MoveWindow(edit_, kPadding, kPadding / 2, kBubbleWidth - kPadding * 2, kInputHeight - kPadding, TRUE);
+    // Grows upward, keeping the bottom (where the bubble points at the
+    // character) fixed at anchorTop, same convention as the response bubble.
+    const int x = inputAnchorTop_.x - kBubbleWidth / 2;
+    const int y = inputAnchorTop_.y - height - kGapAboveAnchor;
+    SetWindowPos(hwnd_, HWND_TOPMOST, x, y, kBubbleWidth, height, SWP_NOACTIVATE);
+    MoveWindow(edit_, kPadding, kPadding / 2, kBubbleWidth - kPadding * 2, height - kPadding, TRUE);
     InvalidateRect(hwnd_, nullptr, TRUE);
+}
+
+void ChatBubble::HandleEditTextChanged() {
+    const int len = GetWindowTextLengthW(edit_);
+    std::wstring text;
+    if (len > 0) {
+        text.resize(static_cast<size_t>(len));
+        GetWindowTextW(edit_, text.data(), len + 1);
+    }
+    // Reuses the same GDI+ measurement the response bubble uses to size
+    // itself, since the edit font (-16px) and the response font (12pt)
+    // work out to the same pixel size at 96 DPI.
+    ResizeInputBox(MeasureBodyHeight(hwnd_, text));
 }
 
 void ChatBubble::EnterStaticMode(POINT anchorTop, const std::wstring& text) {
@@ -311,7 +343,8 @@ void ChatBubble::ShowThinking(POINT anchorTop) {
     ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
 }
 
-void ChatBubble::ShowResponse(POINT anchorTop, const std::wstring& text, DismissCallback onAutoDismiss) {
+void ChatBubble::ShowResponse(
+    POINT anchorTop, const std::wstring& text, DismissCallback onAutoDismiss, bool expectsSpokenReply) {
     onSubmit_ = nullptr;
     onDismiss_ = std::move(onAutoDismiss);
 
@@ -319,11 +352,22 @@ void ChatBubble::ShowResponse(POINT anchorTop, const std::wstring& text, Dismiss
     ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
 
     // A text-length guess used as a safety net in case nothing later calls
-    // RescheduleDismiss (e.g. TTS is unavailable/disabled). When TTS does
-    // speak the reply, MainWindow overrides this via RescheduleDismiss
-    // once the real "speech ended" event arrives, since actual reading
-    // time can run well past this estimate for long replies.
-    const int durationMs = std::clamp(static_cast<int>(text.size()) * 100 + 2000, 3000, 45000);
+    // RescheduleDismiss (e.g. TTS is unavailable/disabled, or a real TTS
+    // call silently fails without ever posting a started/ended event).
+    // MainWindow overrides this via RescheduleDismiss once the real
+    // "speech ended" event arrives.
+    //
+    // When a spoken reply is expected, this guess is set the instant
+    // Speak() is *called*, before the network fetch (OAuth token + TTS
+    // synthesis) that has to finish before playback even starts — so a
+    // tight text-length estimate races that unknown latency and can fire
+    // (cutting the reply off mid-sentence via OnChatDismissed's Stop())
+    // well before speech genuinely ends. Use a much more generous ceiling
+    // in that case so it's a pure safety net rather than part of the
+    // normal-path timing.
+    const int durationMs = expectsSpokenReply
+        ? std::clamp(static_cast<int>(text.size()) * 150 + 15000, 15000, 120000)
+        : std::clamp(static_cast<int>(text.size()) * 100 + 2000, 3000, 45000);
     SetTimer(hwnd_, kAutoDismissTimerId, static_cast<UINT>(durationMs), nullptr);
 }
 
@@ -401,6 +445,11 @@ LRESULT ChatBubble::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
                 if (callback) {
                     callback();
                 }
+            }
+            return 0;
+        case WM_COMMAND:
+            if (HIWORD(wParam) == EN_CHANGE && reinterpret_cast<HWND>(lParam) == edit_) {
+                HandleEditTextChanged();
             }
             return 0;
         default:

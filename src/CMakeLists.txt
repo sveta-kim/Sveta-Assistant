@@ -2,6 +2,7 @@ add_executable(SvetaAssistant WIN32
     ai/AiConfig.cpp
     ai/ChatClient.cpp
     ai/Persona.cpp
+    ai/UserProfile.cpp
     app/main.cpp
     audio/GoogleOAuthTokenProvider.cpp
     audio/GoogleServiceAccount.cpp
@@ -35,6 +36,8 @@ add_executable(SvetaAssistant WIN32
     rendering/SpriteOverlay.cpp
     window/ChatBubble.cpp
     window/MainWindow.cpp
+    window/SettingsWindow.cpp
+    window/TrayIcon.cpp
     window/WindowPosition.cpp
 )
 
@@ -56,10 +59,18 @@ target_link_libraries(SvetaAssistant PRIVATE
     crypt32
     winmm
     bcrypt
+    shell32
+    uxtheme
 )
 
 if(MSVC)
     target_compile_options(SvetaAssistant PRIVATE /utf-8)
+    # Without this, comctl32 controls (buttons, checkboxes, the Settings
+    # window's trackbar) render in the unthemed Windows 2000 style instead
+    # of the current visual style -- this merges a Common-Controls-v6
+    # dependency into the linker's auto-generated manifest, no .rc file needed.
+    target_link_options(SvetaAssistant PRIVATE
+        "/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'")
 endif()
 
 target_compile_definitions(SvetaAssistant PRIVATE

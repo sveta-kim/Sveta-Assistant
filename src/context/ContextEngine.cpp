@@ -125,7 +125,7 @@ void ContextEngine::OnSnapshotMessage(LPARAM lParam) {
 }
 
 std::optional<std::wstring> ContextEngine::ConsumeSameErrorRepeatedEvent() {
-    if (!pendingSameErrorRepeatedEvent_) {
+    if (!privacy_.proactiveSpeechEnabled || !pendingSameErrorRepeatedEvent_) {
         return std::nullopt;
     }
     pendingSameErrorRepeatedEvent_ = false;

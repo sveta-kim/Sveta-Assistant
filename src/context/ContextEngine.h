@@ -45,7 +45,14 @@ public:
     // the privacy toggle above — it drives the character's own behavior,
     // not what's sent to the AI, and reveals nothing beyond "you're in a
     // game" (no title/UI text).
-    bool IsGaming() const { return isGaming_; }
+    bool IsGaming() const { return privacy_.gameDetectionEnabled && isGaming_; }
+
+    // Live updates from the Settings window (see window/SettingsWindow.h)
+    // -- applied without recreating the engine, so the Steam/Epic library
+    // scan and error-repeat history aren't thrown away just to flip a
+    // toggle.
+    void SetGameDetectionEnabled(bool enabled) { privacy_.gameDetectionEnabled = enabled; }
+    void SetProactiveSpeechEnabled(bool enabled) { privacy_.proactiveSpeechEnabled = enabled; }
 
     // Call when notifyMessage arrives at notifyWindow; reclaims and
     // applies the background thread's result.

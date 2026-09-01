@@ -16,6 +16,8 @@
 #include "interaction/PettingDetector.h"
 #include "rendering/Sprite.h"
 #include "window/ChatBubble.h"
+#include "window/SettingsWindow.h"
+#include "window/TrayIcon.h"
 
 namespace sveta::window {
 
@@ -78,6 +80,13 @@ private:
     void SendChatRequestAsync(std::vector<ai::ChatMessage> requestHistory);
     void StartProactiveSpeech(const std::wstring& situationDescription);
 
+    void ShowTrayMenu();
+    void TogglePause();
+    void OpenSettings();
+    SettingsValues BuildCurrentSettingsValues() const;
+    void OnSettingsSaved(const SettingsValues& values);
+    void ResetCharacterPosition();
+
     HWND hwnd_;
     std::optional<rendering::Sprite> sprite_;
     RECT headHitbox_{};
@@ -91,6 +100,12 @@ private:
     std::optional<ai::AiConfig> aiConfig_;
     std::vector<ai::ChatMessage> conversationHistory_;
     bool conversationInFlight_ = false;
+    // What Sveta calls the user, and how she should treat them
+    // (config/user_profile.json, editable via the Settings window) --
+    // folded into every system prompt.
+    std::string userName_;
+    std::string relationshipNote_;
+    std::string primaryLanguage_ = "Korean";
 
     std::unique_ptr<audio::ITextToSpeech> textToSpeech_;
     bool isSpeaking_ = false;
@@ -103,6 +118,13 @@ private:
     std::unique_ptr<context::ContextEngine> contextEngine_;
     // Epoch (never triggered yet) until the first proactive speech.
     std::chrono::steady_clock::time_point lastProactiveSpeechTime_{};
+
+    std::unique_ptr<TrayIcon> trayIcon_;
+    // Set via the tray icon's right-click menu (일시정지/다시 보이기) --
+    // hides the character and stops its idle-behavior tick without fully
+    // exiting the process.
+    bool isPaused_ = false;
+    std::unique_ptr<SettingsWindow> settingsWindow_;
 };
 
 } // namespace sveta::window

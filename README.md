@@ -19,6 +19,7 @@ Windows Desktop AI Companion — 화면 위에 상주하며 사용자를 바라�
   - [게임 인식과 반응](#게임-인식과-반응)
   - [리그 오브 레전드 실시간 컨텍스트](#리그-오브-레전드-실시간-컨텍스트)
   - [선제적 발화](#선제적-발화)
+  - [트레이 아이콘 & 설정 창](#트레이-아이콘--설정-창)
 - [프로젝트 구조](#프로젝트-구조)
 - [알려진 제한사항](#알려진-제한사항)
 
@@ -145,6 +146,11 @@ Engine, 54장 두 번째 MVP).
   동안에도 Idle 애니메이션, 드래그, 쓰다듬기가 그대로 동작한다
 - 성격 수치를 반영한 시스템 프롬프트(`ai/Persona`)와 세션 내 대화 기록(최근
   20턴, 재시작하면 사라짐 — Phase 8 Memory System이 대체할 자리표시자)
+- **개인화**: [설정 창](#트레이-아이콘--설정-창)에서 지정한 사용자 이름,
+  "어떻게 대해줬으면 좋겠는지" 메모, Sveta의 주 사용 언어가 매번
+  시스템 프롬프트에 그대로 들어간다(`ai/UserProfile`, `config/user_profile.json`)
+  — 셋 다 비워두면 프롬프트에서 조용히 생략된다(주 언어는 기본값
+  "한국어"로 항상 명시)
 
 **말풍선 UI**: GDI+로 직접 그린 둥근 말풍선(꼬리, 그림자, Segoe UI)이
 레이어드 창으로 뜬다. 입력 중일 때만 예외적으로 진짜 Edit 컨트롤을 쓰는데
@@ -153,6 +159,16 @@ Engine, 54장 두 번째 MVP).
 (`SetWindowRgn`)으로 대체한다. GDI+ 폰트 서브시스템은 프로세스당 최초 1회
 초기화가 느려서(이 환경에서 ~5초, 이후 매번 ~4ms) 앱 시작 시 백그라운드
 스레드에서 미리 예열해둔다.
+
+- **입력창 자동 확장**: 예전엔 높이가 46px 고정이라 긴 문장을 쓰면
+  자동 스크롤로 앞부분이 화면 밖으로 밀려나 안 보였다. 지금은 입력하는
+  동안 텍스트 양에 맞춰 캐릭터 쪽 꼬리는 고정한 채 위쪽으로 커진다
+  (`ChatBubble::ResizeInputBox()`, 최대 200px)
+- **응답 말풍선 이모지**: GDI+가 쓰는 "Segoe UI" 폰트엔 컬러 이모지
+  글리프가 없어서, AI 응답에 이모지가 섞이면 깨진 네모(tofu box)로
+  보였다. 표시용 텍스트에서만 이모지를 걸러낸다
+  (`audio::StripUnrenderableSymbols()`) — 마크다운은 그대로 두고, TTS용
+  필터(`MakeSpeakable()`)와는 별개 함수다
 
 ### 음성 (TTS)
 
@@ -169,23 +185,34 @@ Engine, 54장 두 번째 MVP).
 
 `config/tts_config.json`의 `"provider"`를 `"google"` 또는 `"sapi"`로
 설정한다. `"google"`인데 인증 정보가 없으면 자동으로 SAPI로 폴백한다
-(경고 로그만 남기고 계속 동작).
+(경고 로그만 남기고 계속 동작). 이 파일의 모든 필드는
+[설정 창](#트레이-아이콘--설정-창)에서 직접 편집할 수도 있다 — 손으로
+JSON을 고칠 필요 없음.
 
 ```json
 // config/tts_config.json (커밋됨 — 민감 정보 없음)
 {
     "provider": "google",
+    "volume_percent": 100,
     "google_voices": {
-        "Korean": "ko-KR-Chirp3-HD-Kore",
+        "Korean": "ko-KR-Chirp3-HD-Leda",
         "English": "en-US-Chirp3-HD-Kore"
         // ... 나머지 5개 언어도 마찬가지 형태
     }
 }
 ```
 
-`google_voices`의 값은 Chirp 3: HD 보이스 30종
-(Achernar, Kore, Puck, Zephyr, Charon, Leda, ...) 중 아무거나 언어별로
-자유롭게 바꿔 끼울 수 있다 — 원하는 목소리로 취향껏 설정하면 된다.
+- `volume_percent`(1~100)는 Google 쪽은 `audioConfig.volumeGainDb`로
+  변환해서(50% ≈ -6dB, 진폭-데시벨 표준 공식) 보내고, SAPI 쪽은
+  `ISpVoice::SetVolume`에 그대로 넘긴다 — 어느 제공자를 쓰든 같은
+  설정 하나로 조절된다
+- `google_voices`의 값은 Chirp 3: HD 보이스 30종 중 아무거나 언어별로
+  자유롭게 바꿔 끼울 수 있다. 이 30종 이름은 추측이 아니라 Cloud TTS의
+  `voices.list` 엔드포인트를 실제로 호출해서(`GET
+  /v1/voices?languageCode=ko-KR`) 성별까지 확인한 것 — 설정 창의 언어별
+  음성 칸이 이 목록을 드롭다운으로 보여준다. 한국어 기본값은 "귀여운
+  느낌"을 요청받아 Google 문서 기준 "Youthful" 톤인 **Leda**(여성)로
+  맞춰뒀다
 
 **인증은 API 키가 아니라 서비스 계정(ADC)이다** — 이 프로젝트의 Google
 Cloud 프로젝트는 조직 정책으로 API 키 발급 자체가 막혀 있어서, 정적
@@ -197,6 +224,21 @@ Cloud 프로젝트는 조직 정책으로 API 키 발급 자체가 막혀 있어
    다운로드
 3. 다운로드한 파일을 `config/google_service_account.json`으로 저장
    (`.gitignore` 처리되어 있어 커밋되지 않는다)
+
+**"서비스 계정 키 생성 사용 중지됨" 에러가 뜨면**: `iam.disableServiceAccountKeyCreation`
+조직 정책이 걸려 있는 것이다 — 신규 프로젝트에 Google이 기본으로 까는
+"보안 우선 기본 설정"의 일부일 수 있다. 개인(비-Workspace) Gmail
+계정이면 대개 소유자 권한으로 직접 풀 수 있다:
+
+```bash
+gcloud organizations list   # 조직 숫자 ID 확인
+gcloud resource-manager org-policies disable-enforce \
+    constraints/iam.disableServiceAccountKeyCreation --organization=<숫자ID>
+```
+
+(`gcloud org-policies delete`는 "명시적으로 설정된 정책이 없다"며
+`NOT_FOUND`를 내는데, 이건 지우려는 게 아니라 기본값을 명시적으로
+덮어써야 하는 상황이라 그렇다 — 위처럼 `disable-enforce`를 써야 한다.)
 
 앱은 이 JSON의 `private_key`로 JWT를 직접 서명해서(RS256) OAuth2 액세스
 토큰을 발급받고, 그걸로 Text-to-Speech API를 호출한다
@@ -233,13 +275,24 @@ Cloud 프로젝트는 조직 정책으로 API 키 발급 자체가 막혀 있어
 음성 추가에서 설치한다.
 
 **구현 메모**:
-- 마크다운/이모지는 TTS 직전에만 제거된다 (`audio/SpeakableText::MakeSpeakable()`).
-  말풍선에 보이는 텍스트는 원문 그대로
+- 마크다운은 TTS 직전에만 제거된다(`audio/SpeakableText::MakeSpeakable()`) —
+  말풍선에 보이는 텍스트는 마크다운까지 원문 그대로. 이모지는 [위에서
+  설명한 대로](#ai-대화) TTS용과 말풍선 표시용, 두 군데 모두에서 각자
+  걸러진다(전자는 `MakeSpeakable()`, 후자는 `StripUnrenderableSymbols()`)
 - 말풍선은 `WM_MOVE`마다 위치를 다시 계산해 캐릭터를 드래그해도 따라온다
   (`ChatBubble::Reposition()`)
 - 말풍선 유지 시간은 실제 TTS 종료 이벤트로 결정된다
   (`ChatBubble::RescheduleDismiss()`, 종료 후 2.5초 유예) — 글자 수 기반
-  추측 타이머(45초 캡)는 TTS를 못 쓸 때만 쓰는 안전장치
+  추측 타이머는 TTS를 못 쓸 때(또는 실패했을 때)만 쓰는 안전장치다.
+  *구현 메모: 이 안전장치 타이머가 원래 `Speak()` 호출 "직후" 짧게
+  잡혀 있어서, Google TTS의 네트워크 왕복(토큰 발급+합성 요청)이 끝나기도
+  전에 먼저 만료돼 `Stop()`을 호출 — 재생이 문장 중간에 끊기는 버그가
+  있었다. TTS로 말할 예정이면 이 타이머를 훨씬 넉넉하게(최대 2분) 잡도록
+  고쳐서 항상 실제 종료 이벤트가 먼저 이기게 했다*
+- 감지 후 걸러내는 이모지/기호 목록에 `~`(물결표) 계열(전각 물결,
+  웨이브 대시 등)도 추가했다 — TTS가 이걸 "물결표"라고 그대로 읽던
+  문제. 다만 통째로 지우면 "3~5개"가 "35개"로 붙어버려서, 지우는 대신
+  공백으로 치환한다
 - GDI+ `Bitmap`이 외부에서 감싼 premultiplied 메모리에 직접
   `FillRectangle`을 그리면 에러 없이 조용히 무시된다 — 별도의 GDI+ 소유
   비트맵에 그린 뒤 `LockBits`로 수동 알파 합성하는 방식으로 우회
@@ -259,8 +312,9 @@ Cloud 프로젝트는 조직 정책으로 API 키 발급 자체가 막혀 있어
   확인했다. 실제 Google OAuth 서버(`oauth2.googleapis.com/token`)에도
   요청을 보내봐서, 존재하지 않는 테스트용 서비스 계정으로도
   `"invalid_grant: account not found"`라는(형식 오류가 아니라 계정
-  조회 단계까지 도달했다는 뜻) 정상적인 응답을 받는 것까지 확인했다
-  — 실제 등록된 서비스 계정으로 진짜 음성이 나오는지는 아직 검증 못 함
+  조회 단계까지 도달했다는 뜻) 정상적인 응답을 받는 것까지 확인했다.
+  이후 실제 등록된 서비스 계정으로 전체 흐름(토큰 발급 → 합성 요청 →
+  재생)이 끊김 없이 도는 것까지 검증 완료
 
 ### 데스크톱 인식
 
@@ -398,13 +452,60 @@ Interruption Score를 그대로 가져왔다(`proactive/InterruptionScore`):
 - 스팸 방지로 10분 쿨다운(`kProactiveCooldown`, UX 튜닝 전 임시값)을 뒀고,
   이미 채팅 중이거나 말풍선이 떠 있으면 트리거를 건너뛴다
 
+### 트레이 아이콘 & 설정 창
+
+캐릭터를 우클릭할 수 없는 대신(드래그 제스처와 겹침), 작업표시줄
+트레이 아이콘(`window/TrayIcon`)이 진입점이다. 아이콘 자체는
+`content/face.png`를 GDI+로 불러와 32px로 리사이즈해서 만든다 —
+별도 `.ico` 리소스가 필요 없다.
+
+**우클릭 메뉴**: 설정 / 일시정지(다시 보이기 토글) / 종료.
+일시정지는 프로세스를 끄지 않고 캐릭터 창만 숨기고 Idle 틱 타이머를
+멈춘다. 탐색기가 재시작돼도(`WM_TASKBARCREATED`) 아이콘을 자동으로
+다시 등록한다.
+
+**설정 창** (`window/SettingsWindow`): 일반 데코레이션 창(모덜리스,
+한 번 만들고 재사용)으로, 다음을 한 곳에서 다룬다:
+
+- **개인화**: 사용자 이름, "어떻게 대해줬으면 좋겠는지" 자유 텍스트
+- **언어**: Sveta의 주 대화 언어(7종), 그리고 이 설정 창 자체의 표시
+  언어(한국어/English — 콤보박스 바꾸는 즉시 라벨이 실시간으로
+  바뀐다). 앱의 나머지 부분(트레이 메뉴, 말풍선)은 아직 한국어 전용
+- **음성**: 제공자(Google/SAPI), 볼륨 슬라이더, 언어별 Chirp 3: HD
+  보이스 드롭다운(위 [음성 (TTS)](#음성-tts) 참고)
+- **자동 동작**: 프로액티브 음성, 게임 감지 각각 켜고 끌 수 있음
+  (`context::PrivacyConfig`에 필드 추가— `SetProactiveSpeechEnabled()`/
+  `SetGameDetectionEnabled()`로 `ContextEngine`을 재생성하지 않고 즉시
+  반영)
+- **캐릭터**: 위치 초기화 버튼
+
+저장하면 해당 JSON 파일들에 바로 기록되고(TTS 엔진 재생성 등) 재시작 없이
+바로 적용된다.
+
+**디자인**: 기본 Win32 다이얼로그 스타일(회색 배경, 각진 버튼)이 "너무
+올드하다"는 피드백을 받고 다크 테마로 전면 교체했다.
+
+- `DwmSetWindowAttribute`로 다크 타이틀바 + 둥근 모서리(Windows 11
+  네이티브 API, 수동 그리기 없이 OS가 처리)
+- 저장/취소/위치초기화 버튼은 `BS_OWNERDRAW` + `WM_DRAWITEM`으로 직접
+  그린다 — 테마 적용된(v6 comctl32) 네이티브 버튼은 `WM_CTLCOLORBTN`의
+  배경 브러시를 무시하기 때문에 커스텀 색을 입히려면 직접 그리는 수밖에
+  없다
+- 콤보박스/트랙바는 `SetWindowTheme(..., L"DarkMode_CFD"/"DarkMode_Explorer", ...)`로
+  다크 스타일을 입힌다(비공식이지만 Windows 탐색기 자신도 쓰는 방식)
+- *구현 메모*: 체크박스/라디오 버튼은 테마가 걸리면 `WM_CTLCOLORBTN`이
+  설정한 글자색을 무시하고 무조건 검정으로 그려서, 다크 배경 위에서
+  글자가 안 보이는 문제가 있었다. `SetWindowTheme(control, L"", L"")`로
+  이 두 컨트롤만 테마를 꺼서(클래식 렌더링으로 되돌려서) 해결 — 체크박스
+  모양은 살짝 예전 스타일이 되지만 글자는 확실히 읽힌다
+
 ## 프로젝트 구조
 
 ```
 src/
   app/          진입점 (WinMain)
   core/         로깅, 파일 경로, 공용 유틸리티
-  window/       Win32 창 관리, 드래그, 위치 저장/복원
+  window/       Win32 창 관리, 드래그, 위치 저장/복원, 트레이 아이콘, 설정 창
   rendering/    PNG 스프라이트 로딩 (WIC); Direct2D/Direct3D는 이후 단계
   character/    Emotion/Action/Personality, CharacterState 오케스트레이션
   behavior/     Idle 상태에서의 확률 기반 행동 선택
@@ -413,9 +514,9 @@ src/
   items/        인터랙티브 소품
   context/      데스크톱 인식, 게임 감지(Steam/Epic 라이브러리, 리그 오브 레전드)
   proactive/    선제적 발화(Interruption Score, 동일 오류 반복 감지)
-  ai/           AI 엔진 연동 (대화, 비전)
+  ai/           AI 엔진 연동 (대화, 비전, 페르소나, 사용자 개인화 프로필)
   memory/       세션/일간/장기 기억
-  audio/        TTS (SAPI); STT는 이 머신에 언어 인식 모델이 없어서 보류
+  audio/        TTS (SAPI, Google Cloud Chirp 3: HD); STT는 이 머신에 언어 인식 모델이 없어서 보류
 content/        캐릭터 및 아이템 패키지 (코드 아닌 데이터)
 assets/         공용 에셋
 config/         런타임 설정
@@ -438,11 +539,12 @@ third_party/    벤더링한 헤더 전용 라이브러리 (nlohmann/json)
   정식 UX 튜닝 전의 placeholder 값
 - **STT/Push-to-Talk 보류**: 이 개발 머신에 한국어/영어 음성 인식 엔진이
   없음. 다른 머신에서 언어팩 설치 후 진행 예정
-- **Google Cloud TTS는 실제 서비스 계정으로 미검증**: JWT 서명/OAuth2
-  토큰 교환 흐름이 Google 서버와 형식적으로 맞는 것까지는 확인했지만
-  (등록되지 않은 테스트 계정으로 "account not found" 응답 받음), 실제
-  등록된 서비스 계정 + Text-to-Speech API 활성화 상태로 진짜 음성이
-  정상 재생되는지는 아직 검증 못 함
+- **UI 언어 설정은 설정 창 자체에만 적용**: 트레이 메뉴, 말풍선, 로그는
+  여전히 한국어 전용. 앱 전체 다국어화는 아직 스코프 밖
+- **체크박스/라디오 버튼은 의도적으로 언테마드**: 다크 설정 창에서 글자
+  색이 하얗게 보이게 하려고 `SetWindowTheme(control, L"", L"")`로
+  껐다(위 [트레이 아이콘 & 설정 창](#트레이-아이콘--설정-창) 구현 메모
+  참고) — 체크 모양이 Windows 11 네이티브 스타일보다 살짝 예전 느낌
 - **게임 실시간 컨텍스트는 리그 오브 레전드 한정**: 다른 게임은 공식
   데이터 소스가 없는 한 지원 계획 없음(위 [리그 오브 레전드 실시간
   컨텍스트](#리그-오브-레전드-실시간-컨텍스트) 참고)

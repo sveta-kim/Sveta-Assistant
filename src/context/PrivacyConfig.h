@@ -16,7 +16,14 @@ struct PrivacyConfig {
     // none; the user should add anything sensitive themselves.
     std::vector<std::wstring> excludedProcesses;
 
+    // User-facing on/off switches surfaced in the Settings window (see
+    // window/SettingsWindow.h). Grouped here with the toggle above since
+    // they're all "how much the character notices/does on its own".
+    bool proactiveSpeechEnabled = true;
+    bool gameDetectionEnabled = true;
+
     static PrivacyConfig Load();
+    void Save() const;
 };
 
 } // namespace sveta::context
