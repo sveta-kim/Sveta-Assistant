@@ -17,6 +17,12 @@ namespace sveta::context {
 // process-name list can't realistically cover every game).
 struct GamesConfig {
     std::vector<std::wstring> knownProcessNames;
+    // Process names the fullscreen heuristic (see IsLikelyGame) should
+    // never fire for, even though they can legitimately go fullscreen
+    // (video players, browsers, presentation software, ...). Doesn't
+    // affect knownProcessNames/library-scan matches -- those are explicit
+    // and always win.
+    std::vector<std::wstring> fullscreenHeuristicExclusions;
     static GamesConfig Load();
 };
 

@@ -21,6 +21,7 @@ struct SettingsValues {
     std::unordered_map<std::string, std::string> voicesByLanguage;
     bool proactiveSpeechEnabled = true;
     bool gameDetectionEnabled = true;
+    bool memoryEnabled = true;
 };
 
 // A dark-themed, owner-drawn settings window -- unlike the rest of the
@@ -99,6 +100,7 @@ private:
 
     HWND proactiveCheckbox_ = nullptr;
     HWND gameDetectionCheckbox_ = nullptr;
+    HWND memoryCheckbox_ = nullptr;
 
     SaveCallback onSave_;
     ResetPositionCallback onResetPosition_;

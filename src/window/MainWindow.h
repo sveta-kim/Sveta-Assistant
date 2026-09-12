@@ -14,6 +14,7 @@
 #include "character/CharacterState.h"
 #include "context/ContextEngine.h"
 #include "interaction/PettingDetector.h"
+#include "memory/MemoryEngine.h"
 #include "rendering/Sprite.h"
 #include "window/ChatBubble.h"
 #include "window/SettingsWindow.h"
@@ -118,6 +119,8 @@ private:
     std::unique_ptr<context::ContextEngine> contextEngine_;
     // Epoch (never triggered yet) until the first proactive speech.
     std::chrono::steady_clock::time_point lastProactiveSpeechTime_{};
+
+    std::unique_ptr<memory::MemoryEngine> memoryEngine_;
 
     std::unique_ptr<TrayIcon> trayIcon_;
     // Set via the tray icon's right-click menu (일시정지/다시 보이기) --

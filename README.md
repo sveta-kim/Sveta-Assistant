@@ -19,13 +19,14 @@ Windows Desktop AI Companion — 화면 위에 상주하며 사용자를 바라�
   - [게임 인식과 반응](#게임-인식과-반응)
   - [리그 오브 레전드 실시간 컨텍스트](#리그-오브-레전드-실시간-컨텍스트)
   - [선제적 발화](#선제적-발화)
+  - [기억 시스템](#기억-시스템)
   - [트레이 아이콘 & 설정 창](#트레이-아이콘--설정-창)
 - [프로젝트 구조](#프로젝트-구조)
 - [알려진 제한사항](#알려진-제한사항)
 
 ## 진행 상황
 
-기획서 52장 로드맵(Phase 0~13) 기준. Phase 7까지 완료했고, Phase 6 위에
+기획서 52장 로드맵(Phase 0~13) 기준. Phase 8까지 완료했고, Phase 6 위에
 정식 Phase는 아닌 확장(게임 인식/반응, 리그 오브 레전드 연동)도 얹었다.
 
 | Phase | 내용 | 상태 |
@@ -38,7 +39,8 @@ Windows Desktop AI Companion — 화면 위에 상주하며 사용자를 바라�
 | 5 | Voice | 부분 완료 — TTS만, STT/Push-to-Talk 보류 |
 | 6 | Desktop Context | 부분 완료 — Screen Capture/Vision 제외 |
 | 7 | Proactive AI | 부분 완료 — 트리거 1개(동일 오류 반복)만 |
-| 8~13 | Memory / Item / Furniture / Multi-Character / Content Platform / Polish | 예정 |
+| 8 | Memory | 부분 완료 — Daily/Long-Term만, "중요 대화" 추출은 보류 |
+| 9~13 | Item / Furniture / Multi-Character / Content Platform / Polish | 예정 |
 
 STT가 보류된 이유는 이 개발 머신에 한국어/영어 음성 *인식* 엔진이 설치되어
 있지 않기 때문이다(TTS 목소리는 있음). 다른 머신에서 Windows 언어팩을
@@ -103,8 +105,10 @@ cmake --build build --config Debug
   현재는 스프라이트 크기에 비례한 근사치(상단 50%, 가운데 72% 너비)이고,
   캐릭터별 정확한 히트박스는 추후 Character Package에서 다룰 예정
 - 히트박스 안에서 좌우로 반복 스와이프하면 쓰다듬기로 인식
-  (`interaction/PettingDetector`) — 적당한 속도, 짧은 시간 내 방향 전환
-  3회 이상 조건 (기획서 8장)
+  (`interaction/PettingDetector`) — 적당한 속도, 짧은 시간(1.2초) 내 방향
+  전환 5회 이상 조건 (기획서 8장 원안은 3회였는데, 이마 쪽에서 살짝
+  2번만 왔다갔다 해도 인식돼버린다는 피드백을 받고 좀 더 확실하게
+  쓰다듬어야 인식되도록 올렸다)
 
 ### 감정 · 행동 · 성격
 
@@ -145,7 +149,8 @@ Engine, 54장 두 번째 MVP).
   실행되고 결과는 `PostMessage`로 UI 스레드에 돌려준다 — 응답을 기다리는
   동안에도 Idle 애니메이션, 드래그, 쓰다듬기가 그대로 동작한다
 - 성격 수치를 반영한 시스템 프롬프트(`ai/Persona`)와 세션 내 대화 기록(최근
-  20턴, 재시작하면 사라짐 — Phase 8 Memory System이 대체할 자리표시자)
+  20턴, 재시작하면 사라짐 — 기획서의 Session 메모리 계층. 재시작을 버텨야
+  하는 Daily/Long-Term 계층은 [기억 시스템](#기억-시스템) 참고)
 - **개인화**: [설정 창](#트레이-아이콘--설정-창)에서 지정한 사용자 이름,
   "어떻게 대해줬으면 좋겠는지" 메모, Sveta의 주 사용 언어가 매번
   시스템 프롬프트에 그대로 들어간다(`ai/UserProfile`, `config/user_profile.json`)
@@ -378,7 +383,19 @@ gcloud resource-manager org-policies disable-enforce \
    최대화해도 작업표시줄 영역까지는 안 덮으므로 오탐이 거의 없다
    (작업표시줄을 자동 숨김으로 해둔 경우는 예외). 이 앱이 아직 DPI 인식
    매니페스트가 없어서 좌표가 실제 창과 몇 픽셀 어긋날 수 있어 8px
-   허용 오차를 뒀다
+   허용 오차를 뒀다. 다만 이 휴리스틱은 "모니터를 꽉 채운 창"과 "게임"을
+   구분 못 해서 동영상 플레이어·브라우저 전체화면·시스템 유틸리티도
+   똑같이 걸릴 수 있다 — `games_config.json`의
+   `fullscreen_heuristic_exclusions`에 등록된 프로세스는 이 휴리스틱만
+   건너뛴다(명시적으로 등록된 게임 목록/라이브러리 스캔 결과는 그대로
+   유효). 브라우저·미디어 플레이어·IDE 등 흔한 경우는 기본으로 이미
+   빠져 있고, 사용자가 직접 추가할 수도 있다. *구현 메모: 앱 시작 직후
+   한 번 낯선 프로세스가 잠깐 포그라운드를 차지해서 게임으로 잘못
+   판정된 사례가 있었는데, 로그로 실행 파일 경로까지 추적해보니
+   실제로는 "산나비(SANABI)" 게임 자체의 실행 파일(`SNB.exe`)이었다 —
+   Steam 라이브러리 스캔이 정상적으로 게임으로 잡아낸 것이었지 오탐이
+   아니었다. 낯선 프로세스명만 보고 바로 제외 목록에 넣기 전에 실제
+   경로를 확인해야 한다는 교훈*
 
 **게임 중 캐릭터 행동**: `character/Action::PlayingGame` + `Emotion::Excited`로
 표시되고, 전용 스프라이트 `playing_game.png`(calm.png 위에 게임패드 아이콘
@@ -452,6 +469,42 @@ Interruption Score를 그대로 가져왔다(`proactive/InterruptionScore`):
 - 스팸 방지로 10분 쿨다운(`kProactiveCooldown`, UX 튜닝 전 임시값)을 뒀고,
   이미 채팅 중이거나 말풍선이 떠 있으면 트리거를 건너뛴다
 
+### 기억 시스템
+
+기획서 22장 Memory. Session 메모리(현재 대화, `MainWindow::conversationHistory_`,
+재시작하면 사라짐)는 기존에 있었고, 이번에 재시작을 버텨내는 두 계층을
+새로 추가했다 — 둘 다 AI 요약 없이, 앱이 이미 감지하고 있는 신호(게임/
+개발 도구 포커스, Idle→Sleeping 전환, 오류 반복 감지)만으로 만든 사실
+기반 기록이다:
+
+- **Daily Memory** (`memory/DailyMemory`): 하루치 타임스탬프 활동 로그,
+  `%LOCALAPPDATA%\SvetaAssistant\memory\daily\YYYY-MM-DD.json`에 저장.
+  예: `13:20 프로그램 시작`, `14:05 게임 시작 (VALORANT-Win64-Shipping.exe)`,
+  `15:32 게임 종료 (1시간 27분)`, `15:40 같은 오류 반복 감지`,
+  `18:00 휴식 시작`, `18:22 활동 재개`. 로컬 벽시계 시각 기준
+  (`GetLocalTime()` — `core::Logger`의 UTC 타임스탬프와 다름). 30일 지난
+  파일은 시작 시 자동 삭제.
+- **Long-Term Memory** (`memory/LongTermMemory`): 누적 통계 하나
+  (`...\memory\long_term.json`) — 최초 실행일, 프로그램별/게임별 누적
+  사용 시간(초). "중요한 대화"나 습관 추론은 AI 요약이 필요해서 v1
+  범위 밖으로 미뤘다(코드에 `TODO(Phase 8.x)`로 남겨둠).
+- **`memory/MemoryEngine`**가 이 둘을 오케스트레이션한다. 게임/개발 도구/
+  휴식 상태는 30초(`kDebounceTicks`) 연속으로 유지돼야 로그에 커밋되도록
+  디바운스했다 — 몇 초짜리 Alt-Tab에 "시작/종료" 쌍이 스팸처럼 찍히는 걸
+  막기 위함. 개발 도구는 `GameDetector`의 풀스크린 예외 목록과 같은
+  방식으로 하드코딩된 목록(devenv.exe, Code.exe, 각종 JetBrains IDE 등)을
+  씀 — v1은 사용자 편집 불가, 다음 버전에서 설정 파일로 뺄 예정.
+- 매 채팅 요청마다 오늘의 기록 + 누적 통계를 한 줄 다이제스트로 압축해
+  시스템 프롬프트에 얹는다(`BuildMemoryDigestLine()`) — 예:
+  `(함께한 지 12일째. 오늘: 14:05 게임 시작(발로란트), 15:40 같은 오류
+  반복 감지. 자주 쓰는 프로그램: devenv.exe, chrome.exe.)`. "자주 쓰는
+  프로그램/게임"은 일별 로그 파일이 3개 이상 쌓이기 전엔 생략한다 — 쓴 지
+  5분 만에 "자주 쓰는 프로그램" 운운하면 어색하니까.
+- 설정 창의 "자동 동작" 섹션에서 메모리 자체를 켜고 끌 수 있다
+  (`PrivacyConfig::memoryEnabled`, 기획서 51장 프라이버시 토글 요구사항).
+  끄면 새 기록이 멈추고 다이제스트도 사라지지만 이미 쌓인 기록은
+  삭제되지 않는다 — 다시 켜면 이어서 기록.
+
 ### 트레이 아이콘 & 설정 창
 
 캐릭터를 우클릭할 수 없는 대신(드래그 제스처와 겹침), 작업표시줄
@@ -473,10 +526,11 @@ Interruption Score를 그대로 가져왔다(`proactive/InterruptionScore`):
   바뀐다). 앱의 나머지 부분(트레이 메뉴, 말풍선)은 아직 한국어 전용
 - **음성**: 제공자(Google/SAPI), 볼륨 슬라이더, 언어별 Chirp 3: HD
   보이스 드롭다운(위 [음성 (TTS)](#음성-tts) 참고)
-- **자동 동작**: 프로액티브 음성, 게임 감지 각각 켜고 끌 수 있음
-  (`context::PrivacyConfig`에 필드 추가— `SetProactiveSpeechEnabled()`/
-  `SetGameDetectionEnabled()`로 `ContextEngine`을 재생성하지 않고 즉시
-  반영)
+- **자동 동작**: 프로액티브 음성, 게임 감지, 메모리(위 [기억
+  시스템](#기억-시스템) 참고) 각각 켜고 끌 수 있음 (`context::PrivacyConfig`에
+  필드 추가 — `SetProactiveSpeechEnabled()`/`SetGameDetectionEnabled()`/
+  `SetMemoryEnabled()`로 `ContextEngine`/`MemoryEngine`을 재생성하지 않고
+  즉시 반영)
 - **캐릭터**: 위치 초기화 버튼
 
 저장하면 해당 JSON 파일들에 바로 기록되고(TTS 엔진 재생성 등) 재시작 없이
@@ -549,4 +603,11 @@ third_party/    벤더링한 헤더 전용 라이브러리 (nlohmann/json)
   데이터 소스가 없는 한 지원 계획 없음(위 [리그 오브 레전드 실시간
   컨텍스트](#리그-오브-레전드-실시간-컨텍스트) 참고)
 - **대화 기록은 세션 한정**: 최근 20턴까지만 유지, 재시작하면 사라짐 —
-  Phase 8 Memory System이 대체할 자리표시자
+  의도된 설계(Session 메모리 계층). 재시작을 버티는 활동 기록은 [기억
+  시스템](#기억-시스템)의 Daily/Long-Term Memory 참고
+- **Long-Term Memory는 "중요한 대화"를 기억하지 않음**: v1은 프로그램/게임
+  사용 시간 같은 기계적 통계만 쌓는다 — 습관이나 대화 내용 요약은 AI
+  호출이 필요해서 다음 버전으로 미뤘다(`memory/LongTermMemory.h`의
+  `TODO(Phase 8.x)` 참고)
+- **개발 도구 감지 목록은 하드코딩**: `memory/MemoryEngine.cpp`에 이름을
+  직접 추가해야 함 — 사용자 편집 가능한 설정 파일은 아직 없음

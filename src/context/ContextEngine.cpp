@@ -64,10 +64,14 @@ bool ContextEngine::IsExcluded(const std::wstring& processName) const {
 void ContextEngine::OnActiveWindowChanged(const ActiveWindowTracker::WindowInfo& info) {
     // Independent of the privacy toggle below: this only looks at the
     // process name and window geometry, never title/UI text.
+    currentProcessName_ = info.processName;
+
     const bool wasGaming = isGaming_;
     isGaming_ = gameDetector_.IsLikelyGame(info.processName, info.hwnd);
     if (isGaming_ != wasGaming) {
-        core::Logger::Info(std::format("ContextEngine: gaming context {}", isGaming_ ? "started" : "ended"));
+        core::Logger::Info(std::format(
+            "ContextEngine: gaming context {} (process='{}')", isGaming_ ? "started" : "ended",
+            core::WideToUtf8(info.processName)));
     }
 
     if (!privacy_.screenAwarenessEnabled) {
@@ -139,6 +143,13 @@ std::optional<std::wstring> ContextEngine::ConsumeSameErrorRepeatedEvent() {
         L"사용자가 직접 물어본 건 아니지만, 네가 먼저 짧게 한마디 건네보자 — 너무 참견하는 "
         L"느낌은 피하고 네 성격을 살려서 자연스럽게 말해줘.)";
     return description;
+}
+
+std::wstring ContextEngine::CurrentProcessNameForMemory() const {
+    if (!privacy_.memoryEnabled || IsExcluded(currentProcessName_)) {
+        return L"";
+    }
+    return currentProcessName_;
 }
 
 std::wstring ContextEngine::BuildContextLine() const {

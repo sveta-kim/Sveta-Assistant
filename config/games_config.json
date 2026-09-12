@@ -23,5 +23,6 @@
         "stardewvalley.exe",
         "amongus.exe",
         "helldivers2.exe"
-    ]
+    ],
+    "fullscreen_heuristic_exclusions": []
 }

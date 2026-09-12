@@ -29,6 +29,7 @@ PrivacyConfig PrivacyConfig::Load() {
         }
         config.proactiveSpeechEnabled = parsed.value("proactive_speech_enabled", true);
         config.gameDetectionEnabled = parsed.value("game_detection_enabled", true);
+        config.memoryEnabled = parsed.value("memory_enabled", true);
     } catch (const nlohmann::json::exception& e) {
         core::Logger::Error(std::string("Failed to parse privacy_config.json: ") + e.what());
     }
@@ -46,6 +47,7 @@ void PrivacyConfig::Save() const {
     out["excluded_processes"] = excluded;
     out["proactive_speech_enabled"] = proactiveSpeechEnabled;
     out["game_detection_enabled"] = gameDetectionEnabled;
+    out["memory_enabled"] = memoryEnabled;
 
     const std::filesystem::path path = std::filesystem::path(SVETA_CONFIG_DIR) / "privacy_config.json";
     std::ofstream file(path);

@@ -169,6 +169,9 @@ std::unique_ptr<MainWindow> MainWindow::Create(HINSTANCE instance) {
         core::Logger::Warn("Desktop awareness unavailable; chat won't know what's on screen");
     }
 
+    window->memoryEngine_ = memory::MemoryEngine::Create();
+    window->memoryEngine_->RecordAppStart();
+
     window->trayIcon_ = TrayIcon::Create(
         hwnd, kTrayIconMessage, std::filesystem::path(SVETA_CONTENT_DIR) / L"face.png", L"Sveta Assistant");
 
@@ -329,11 +332,20 @@ void MainWindow::HandleTick() {
             if (const auto situation = contextEngine_->ConsumeSameErrorRepeatedEvent()) {
                 lastProactiveSpeechTime_ = now;
                 StartProactiveSpeech(*situation);
+                if (memoryEngine_) {
+                    memoryEngine_->RecordSameErrorRepeated();
+                }
             }
         }
     }
     characterState_.Tick(now, isHovering_);
     SyncSpriteToEmotion();
+
+    if (memoryEngine_ && contextEngine_) {
+        memoryEngine_->Tick(
+            contextEngine_->IsGaming(), contextEngine_->CurrentProcessNameForMemory(),
+            characterState_.CurrentAction() == character::Action::Sleeping);
+    }
 }
 
 POINT MainWindow::ComputeBubbleAnchor() const {
@@ -395,6 +407,12 @@ void MainWindow::OnMessageSubmitted(const std::wstring& message) {
             requestHistory.push_back({"system", core::WideToUtf8(contextLine)});
         }
     }
+    if (memoryEngine_) {
+        const std::string memoryLine = memoryEngine_->BuildMemoryDigestLine();
+        if (!memoryLine.empty()) {
+            requestHistory.push_back({"system", memoryLine});
+        }
+    }
     requestHistory.insert(requestHistory.end(), conversationHistory_.begin(), conversationHistory_.end());
     SendChatRequestAsync(std::move(requestHistory));
 }
@@ -447,6 +465,12 @@ void MainWindow::StartProactiveSpeech(const std::wstring& situationDescription) 
     std::vector<ai::ChatMessage> requestHistory;
     requestHistory.push_back({"system", ai::BuildSystemPrompt(characterState_.GetPersonality(), userName_, relationshipNote_, primaryLanguage_)});
     requestHistory.push_back({"system", core::WideToUtf8(situationDescription)});
+    if (memoryEngine_) {
+        const std::string memoryLine = memoryEngine_->BuildMemoryDigestLine();
+        if (!memoryLine.empty()) {
+            requestHistory.push_back({"system", memoryLine});
+        }
+    }
     requestHistory.insert(requestHistory.end(), conversationHistory_.begin(), conversationHistory_.end());
     SendChatRequestAsync(std::move(requestHistory));
 }
@@ -595,6 +619,7 @@ SettingsValues MainWindow::BuildCurrentSettingsValues() const {
     const context::PrivacyConfig privacyConfig = context::PrivacyConfig::Load();
     values.proactiveSpeechEnabled = privacyConfig.proactiveSpeechEnabled;
     values.gameDetectionEnabled = privacyConfig.gameDetectionEnabled;
+    values.memoryEnabled = privacyConfig.memoryEnabled;
     return values;
 }
 
@@ -625,6 +650,7 @@ void MainWindow::OnSettingsSaved(const SettingsValues& values) {
     context::PrivacyConfig privacyConfig = context::PrivacyConfig::Load();
     privacyConfig.proactiveSpeechEnabled = values.proactiveSpeechEnabled;
     privacyConfig.gameDetectionEnabled = values.gameDetectionEnabled;
+    privacyConfig.memoryEnabled = values.memoryEnabled;
     privacyConfig.Save();
 
     // Apply live rather than requiring a restart.
@@ -632,6 +658,10 @@ void MainWindow::OnSettingsSaved(const SettingsValues& values) {
     if (contextEngine_) {
         contextEngine_->SetProactiveSpeechEnabled(values.proactiveSpeechEnabled);
         contextEngine_->SetGameDetectionEnabled(values.gameDetectionEnabled);
+        contextEngine_->SetMemoryEnabled(values.memoryEnabled);
+    }
+    if (memoryEngine_) {
+        memoryEngine_->SetEnabled(values.memoryEnabled);
     }
     core::Logger::Info("Settings saved and applied");
 }
@@ -753,6 +783,9 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             KillTimer(hwnd_, kCharacterTickTimerId);
             KillTimer(hwnd_, kMouthAnimationTimerId);
             SaveCurrentPosition();
+            if (memoryEngine_) {
+                memoryEngine_->Save();
+            }
             core::Logger::Info("Main window destroyed");
             PostQuitMessage(0);
             return 0;

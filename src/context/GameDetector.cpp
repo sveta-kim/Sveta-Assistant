@@ -59,8 +59,26 @@ bool IsFullscreenExclusive(HWND hwnd) {
 
 } // namespace
 
+namespace {
+
+// Common apps that legitimately go fullscreen but aren't games -- the
+// fullscreen heuristic can't otherwise tell these apart from an actual
+// borderless-fullscreen game. User-editable/extendable via
+// games_config.json's "fullscreen_heuristic_exclusions".
+std::vector<std::wstring> DefaultFullscreenHeuristicExclusions() {
+    return {
+        L"chrome.exe",   L"msedge.exe", L"firefox.exe",         L"brave.exe",     L"opera.exe",
+        L"vlc.exe",      L"mpv.exe",    L"wmplayer.exe",        L"mpc-hc64.exe",  L"mpc-hc.exe",
+        L"POWERPNT.EXE", L"Spotify.exe", L"Code.exe",           L"devenv.exe",    L"WindowsTerminal.exe",
+        L"explorer.exe", L"AcroRd32.exe", L"Acrobat.exe",       L"claude.exe",
+    };
+}
+
+} // namespace
+
 GamesConfig GamesConfig::Load() {
     GamesConfig config;
+    config.fullscreenHeuristicExclusions = DefaultFullscreenHeuristicExclusions();
 
     const std::filesystem::path path = std::filesystem::path(SVETA_CONFIG_DIR) / "games_config.json";
     std::ifstream file(path);
@@ -75,6 +93,12 @@ GamesConfig GamesConfig::Load() {
         file >> parsed;
         for (const auto& entry : parsed.value("known_process_names", nlohmann::json::array())) {
             config.knownProcessNames.push_back(core::Utf8ToWide(entry.get<std::string>()));
+        }
+        // Additive, not a replacement: extra entries here add to the
+        // built-in defaults above rather than requiring the user to
+        // re-list every default just to add one more.
+        for (const auto& entry : parsed.value("fullscreen_heuristic_exclusions", nlohmann::json::array())) {
+            config.fullscreenHeuristicExclusions.push_back(core::Utf8ToWide(entry.get<std::string>()));
         }
     } catch (const nlohmann::json::exception& e) {
         core::Logger::Error(std::string("Failed to parse games_config.json: ") + e.what());
@@ -120,6 +144,12 @@ bool GameDetector::IsLikelyGame(const std::wstring& processName, HWND hwnd) cons
             if (_wcsicmp(known.c_str(), processName.c_str()) == 0) {
                 return true;
             }
+        }
+    }
+
+    for (const auto& excluded : config_.fullscreenHeuristicExclusions) {
+        if (_wcsicmp(excluded.c_str(), processName.c_str()) == 0) {
+            return false;
         }
     }
 

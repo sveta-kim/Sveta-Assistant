@@ -67,6 +67,7 @@ enum class StringId {
     SectionAutomation,
     CheckProactive,
     CheckGameDetection,
+    CheckMemory,
     SectionCharacter,
     ButtonResetPosition,
     ButtonSave,
@@ -100,6 +101,7 @@ constexpr const wchar_t* kStrings[static_cast<size_t>(StringId::Count)][2] = {
     {L"자동 동작", L"Automatic behavior"},
     {L"프로액티브 음성 (같은 오류 반복 시 먼저 말 걸기)", L"Proactive speech (speaks up on repeated errors)"},
     {L"게임 감지 (플레이 중인 게임 인식)", L"Game detection (recognizes active games)"},
+    {L"메모리 (하루 활동/자주 쓰는 프로그램 기억)", L"Memory (remembers daily activity / frequent programs)"},
     {L"캐릭터", L"Character"},
     {L"위치 초기화", L"Reset position"},
     {L"저장", L"Save"},
@@ -351,6 +353,10 @@ void SettingsWindow::BuildControls(HINSTANCE instance) {
         L"BUTTON", StringId::CheckGameDetection, WS_TABSTOP | BS_AUTOCHECKBOX, kMargin, kWindowWidth - kMargin * 2,
         20, 0);
     darkCheckable(gameDetectionCheckbox_);
+    y += kRowHeight + 4;
+    memoryCheckbox_ = addControl(
+        L"BUTTON", StringId::CheckMemory, WS_TABSTOP | BS_AUTOCHECKBOX, kMargin, kWindowWidth - kMargin * 2, 20, 0);
+    darkCheckable(memoryCheckbox_);
     y += kRowHeight + kSectionSpacing;
 
     // 캐릭터
@@ -441,6 +447,7 @@ void SettingsWindow::ApplyValuesToControls(const SettingsValues& values) {
 
     SendMessageW(proactiveCheckbox_, BM_SETCHECK, values.proactiveSpeechEnabled ? BST_CHECKED : BST_UNCHECKED, 0);
     SendMessageW(gameDetectionCheckbox_, BM_SETCHECK, values.gameDetectionEnabled ? BST_CHECKED : BST_UNCHECKED, 0);
+    SendMessageW(memoryCheckbox_, BM_SETCHECK, values.memoryEnabled ? BST_CHECKED : BST_UNCHECKED, 0);
 }
 
 SettingsValues SettingsWindow::ReadValuesFromControls() const {
@@ -476,6 +483,7 @@ SettingsValues SettingsWindow::ReadValuesFromControls() const {
 
     values.proactiveSpeechEnabled = SendMessageW(proactiveCheckbox_, BM_GETCHECK, 0, 0) == BST_CHECKED;
     values.gameDetectionEnabled = SendMessageW(gameDetectionCheckbox_, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    values.memoryEnabled = SendMessageW(memoryCheckbox_, BM_GETCHECK, 0, 0) == BST_CHECKED;
     return values;
 }
 

@@ -12,9 +12,12 @@ constexpr double kMaxSpeedPxPerSec = 2000.0;
 // Direction reversals must land within this rolling window to count as one
 // continuous stroking gesture.
 constexpr std::chrono::milliseconds kReversalWindow{1200};
-// Reversals needed within the window (~1.5 back-and-forth cycles) before a
+// Reversals needed within the window (~2.5 back-and-forth cycles) before a
 // gesture is recognized as petting rather than an incidental wiggle.
-constexpr int kMinReversalsInWindow = 3;
+// *Feedback: 3 (the original project-plan value) fired after only about 2
+// casual back-and-forth movements near the forehead -- too easy to trigger
+// by accident. Raised to require a more deliberate, sustained stroke.*
+constexpr int kMinReversalsInWindow = 5;
 } // namespace
 
 bool PettingDetector::OnCursorMove(POINT position, std::chrono::steady_clock::time_point now) {

@@ -53,6 +53,15 @@ public:
     // toggle.
     void SetGameDetectionEnabled(bool enabled) { privacy_.gameDetectionEnabled = enabled; }
     void SetProactiveSpeechEnabled(bool enabled) { privacy_.proactiveSpeechEnabled = enabled; }
+    void SetMemoryEnabled(bool enabled) { privacy_.memoryEnabled = enabled; }
+
+    // Current foreground process's exe filename, for memory::MemoryEngine's
+    // per-process active-time tally (Phase 8) -- tracked unconditionally
+    // (like isGaming_ above) so it doesn't depend on the screen-awareness
+    // toggle, but gated on its own memoryEnabled toggle and the excluded-
+    // process list, same privacy posture as BuildContextLine. Empty when
+    // memory is disabled or the process is excluded.
+    std::wstring CurrentProcessNameForMemory() const;
 
     // Call when notifyMessage arrives at notifyWindow; reclaims and
     // applies the background thread's result.
@@ -89,6 +98,9 @@ private:
     int currentGeneration_ = 0;
     bool isGaming_ = false;
     bool pendingSameErrorRepeatedEvent_ = false;
+    // Tracked unconditionally (independent of screenAwarenessEnabled), same
+    // as isGaming_ -- see CurrentProcessNameForMemory().
+    std::wstring currentProcessName_;
 };
 
 } // namespace sveta::context

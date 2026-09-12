@@ -21,6 +21,11 @@ struct PrivacyConfig {
     // they're all "how much the character notices/does on its own".
     bool proactiveSpeechEnabled = true;
     bool gameDetectionEnabled = true;
+    // Project plan section 51 explicitly calls for a "Memory: ON / OFF"
+    // control alongside screen awareness -- gates memory/MemoryEngine
+    // recording and reading anything at all (see ContextEngine's
+    // CurrentProcessNameForMemory(), which returns empty while this is off).
+    bool memoryEnabled = true;
 
     static PrivacyConfig Load();
     void Save() const;
