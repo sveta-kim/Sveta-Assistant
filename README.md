@@ -20,6 +20,7 @@ Windows Desktop AI Companion — 화면 위에 상주하며 사용자를 바라�
   - [리그 오브 레전드 실시간 컨텍스트](#리그-오브-레전드-실시간-컨텍스트)
   - [선제적 발화](#선제적-발화)
   - [기억 시스템](#기억-시스템)
+  - [아이템 시스템](#아이템-시스템)
   - [트레이 아이콘 & 설정 창](#트레이-아이콘--설정-창)
 - [프로젝트 구조](#프로젝트-구조)
 - [알려진 제한사항](#알려진-제한사항)
@@ -40,7 +41,8 @@ Windows Desktop AI Companion — 화면 위에 상주하며 사용자를 바라�
 | 6 | Desktop Context | 부분 완료 — Screen Capture/Vision 제외 |
 | 7 | Proactive AI | 부분 완료 — 트리거 1개(동일 오류 반복)만 |
 | 8 | Memory | 부분 완료 — Daily/Long-Term만, "중요 대화" 추출은 보류 |
-| 9~13 | Item / Furniture / Multi-Character / Content Platform / Polish | 예정 |
+| 9 | Item System | 부분 완료 — 아이템 1개(커피잔), 캐릭터 1명 기준 |
+| 10~13 | Furniture & Room / Multi-Character / Content Platform / Polish | 예정 |
 
 STT가 보류된 이유는 이 개발 머신에 한국어/영어 음성 *인식* 엔진이 설치되어
 있지 않기 때문이다(TTS 목소리는 있음). 다른 머신에서 Windows 언어팩을
@@ -505,6 +507,44 @@ Interruption Score를 그대로 가져왔다(`proactive/InterruptionScore`):
   끄면 새 기록이 멈추고 다이제스트도 사라지지만 이미 쌓인 기록은
   삭제되지 않는다 — 다시 켜면 이어서 기록.
 
+### 아이템 시스템
+
+기획서 27장/31장(아이템 시스템, Phase 9). 여러 캐릭터·구매를 전제로 한
+원래 기획을 단일 캐릭터(Sveta) 기준으로 좁혀서, 소품 1개(커피잔)만
+드래그 기반 상호작용으로 구현했다.
+
+- `items/ItemWindow`가 커피잔 전용의 작은 독립 레이어드 창을 만든다 —
+  `window/ChatBubble`과 똑같은 방식(자체 윈도우 클래스, `WS_EX_LAYERED |
+  WS_EX_TOPMOST`)으로 만들고, 캐릭터 창을 움직여도 따라다니지 않는다
+  (사용자가 원하는 자리에 자유롭게 놓아둘 수 있어야 하므로).
+- **상호작용은 순수 드래그 기반**이다 — 기획서엔 PickUp/Drink/Offer/Place
+  4개 동작이 나열돼 있지만, 별도 컨텍스트 메뉴 UI를 만드는 대신 캐릭터
+  창을 드래그하는 것과 완전히 동일한 트릭(`WM_LBUTTONDOWN` →
+  `ReleaseCapture` + `WM_NCLBUTTONDOWN`/`HTCAPTION`)을 커피잔 창에도 그대로
+  재사용했다. 커피잔을 집는 것(PickUp)은 그냥 드래그 시작, 다른 곳에
+  내려놓는 것(Place)은 드래그 종료 시 캐릭터 창과 겹치지 않는 경우, 캐릭터
+  위에 드래그해서 놓으면(Offer, `IntersectRect`로 겹침 판정) Sveta가
+  반응하고 그 결과로 "마시는" 것(Drink)까지 하나의 제스처로 자연스럽게
+  이어진다.
+- 커피잔을 건네면 `character::CharacterState::OnItemOffered()`가
+  `Emotion::Happy` + `Action::Drinking`으로 반응하고(`Action::Drinking`은
+  이전부터 idle 행동에 존재했지만 실제로 쓰인 건 이번이 처음), 곧바로
+  기존 [선제적 발화](#선제적-발화) 파이프라인(`StartProactiveSpeech`)을
+  재사용해 "커피를 좋아하는 Sveta"라는 상황을 실제 AI에게 그대로 넘겨
+  진짜 대사를 받아온다 — 캔 대사가 아니라 매번 다른, 실제 채팅/TTS
+  경로를 그대로 타는 진짜 반응이다.
+- 커피잔의 화면 위치는 캐릭터 위치와 같은 방식(`window::WindowPosition`,
+  이번에 파일명을 파라미터화해서 재사용)으로 저장/복원되며, 처음 실행 시엔
+  캐릭터 오른쪽에 자동으로 나타난다.
+- 그림은 실제 아트가 아니라 `tools/generate_coffee_mug_sprite.py`로 생성한
+  간단한 플레이스홀더(96x96, 컵 모양 + 손잡이 + 김) — 나중에 실제 그림으로
+  교체하면 됨.
+- 드래그 자체는 OS 네이티브 캡션-드래그 루프라 SendMessage로 시뮬레이션할
+  수 없어서, `#ifndef NDEBUG` 트레이 메뉴에 "디버그: 머그컵 제공" 항목을
+  남겨뒀다 — 실제 드래그 없이도 반응 로직만 바로 확인 가능(Release
+  빌드에서는 아예 빠짐). 실제 드래그-앤-드롭 자체는 라이브로 직접 여러 번
+  테스트해서 확인함.
+
 ### 트레이 아이콘 & 설정 창
 
 캐릭터를 우클릭할 수 없는 대신(드래그 제스처와 겹침), 작업표시줄
@@ -565,7 +605,7 @@ src/
   behavior/     Idle 상태에서의 확률 기반 행동 선택
   interaction/  마우스 상호작용, 쓰다듬기, 히트박스
   content/      캐릭터/아이템/가구 패키지 로딩
-  items/        인터랙티브 소품
+  items/        인터랙티브 소품 (커피잔 전용 드래그 가능 창)
   context/      데스크톱 인식, 게임 감지(Steam/Epic 라이브러리, 리그 오브 레전드)
   proactive/    선제적 발화(Interruption Score, 동일 오류 반복 감지)
   ai/           AI 엔진 연동 (대화, 비전, 페르소나, 사용자 개인화 프로필)
@@ -611,3 +651,6 @@ third_party/    벤더링한 헤더 전용 라이브러리 (nlohmann/json)
   `TODO(Phase 8.x)` 참고)
 - **개발 도구 감지 목록은 하드코딩**: `memory/MemoryEngine.cpp`에 이름을
   직접 추가해야 함 — 사용자 편집 가능한 설정 파일은 아직 없음
+- **아이템 시스템은 소품 1개뿐**: 커피잔 외 다른 소품, 여러 캐릭터별
+  다른 반응, 구매/컬렉션 개념(기획서 27/31장 원문이 전제하는 것) 모두
+  아직 없음. 그림도 실제 아트가 아니라 플레이스홀더

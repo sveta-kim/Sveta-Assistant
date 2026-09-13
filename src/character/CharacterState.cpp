@@ -64,6 +64,19 @@ void CharacterState::OnPetted(std::chrono::steady_clock::time_point now) {
     transientActionUntil_ = now + std::chrono::milliseconds(durationMs);
 }
 
+void CharacterState::OnItemOffered(std::chrono::steady_clock::time_point now) {
+    lastInteractionTime_ = now;
+    isSleeping_ = false;
+    if (IsConversing()) {
+        return; // an offer mid-conversation shouldn't derail it (matches OnPetted)
+    }
+
+    SetEmotion(Emotion::Happy);
+    SetAction(Action::Drinking);
+    // Same duration as the existing Drink idle-behavior flourish.
+    transientActionUntil_ = now + std::chrono::seconds(3);
+}
+
 void CharacterState::OnHoverStart(std::chrono::steady_clock::time_point now) {
     lastInteractionTime_ = now;
     const bool wasSleeping = isSleeping_;

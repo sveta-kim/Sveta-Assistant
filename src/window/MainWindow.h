@@ -14,6 +14,7 @@
 #include "character/CharacterState.h"
 #include "context/ContextEngine.h"
 #include "interaction/PettingDetector.h"
+#include "items/ItemWindow.h"
 #include "memory/MemoryEngine.h"
 #include "rendering/Sprite.h"
 #include "window/ChatBubble.h"
@@ -80,6 +81,7 @@ private:
     void OnAiResponse(const AiResponsePayload& payload);
     void SendChatRequestAsync(std::vector<ai::ChatMessage> requestHistory);
     void StartProactiveSpeech(const std::wstring& situationDescription);
+    void OnCoffeeMugOffered();
 
     void ShowTrayMenu();
     void TogglePause();
@@ -121,6 +123,9 @@ private:
     std::chrono::steady_clock::time_point lastProactiveSpeechTime_{};
 
     std::unique_ptr<memory::MemoryEngine> memoryEngine_;
+
+    // Phase 9 Item System v1 -- scoped to a single item (coffee mug).
+    std::unique_ptr<items::ItemWindow> coffeeMugWindow_;
 
     std::unique_ptr<TrayIcon> trayIcon_;
     // Set via the tray icon's right-click menu (일시정지/다시 보이기) --

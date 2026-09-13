@@ -71,6 +71,11 @@ std::vector<std::wstring> DefaultFullscreenHeuristicExclusions() {
         L"vlc.exe",      L"mpv.exe",    L"wmplayer.exe",        L"mpc-hc64.exe",  L"mpc-hc.exe",
         L"POWERPNT.EXE", L"Spotify.exe", L"Code.exe",           L"devenv.exe",    L"WindowsTerminal.exe",
         L"explorer.exe", L"AcroRd32.exe", L"Acrobat.exe",       L"claude.exe",
+        // Screenshot/capture overlays legitimately cover the whole monitor
+        // while selecting a region -- SnippingTool.exe is the classic Win32
+        // process name, ScreenClippingHost.exe is the modern Win+Shift+S
+        // package's actual process.
+        L"SnippingTool.exe", L"ScreenClippingHost.exe",
     };
 }
 

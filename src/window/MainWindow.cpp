@@ -49,6 +49,14 @@ constexpr UINT kTrayIconMessage = WM_APP + 4;
 constexpr UINT_PTR kMenuIdTogglePause = 1;
 constexpr UINT_PTR kMenuIdExit = 2;
 constexpr UINT_PTR kMenuIdSettings = 3;
+#ifndef NDEBUG
+// Debug-only: the mug's own drag loop pumps real hardware input, so there's
+// no SendMessage/PostMessage way to simulate a full drag-and-drop. This
+// menu item exercises the CharacterState + AI-reaction half of Phase 9's
+// item system directly, without needing a real drag. Compiled out of
+// Release builds entirely.
+constexpr UINT_PTR kMenuIdDebugOfferMug = 4;
+#endif
 
 constexpr size_t kMaxHistoryMessages = 20;
 
@@ -171,6 +179,14 @@ std::unique_ptr<MainWindow> MainWindow::Create(HINSTANCE instance) {
 
     window->memoryEngine_ = memory::MemoryEngine::Create();
     window->memoryEngine_->RecordAppStart();
+
+    window->coffeeMugWindow_ = items::ItemWindow::Create(
+        instance, hwnd, [mainWindow = window.get()]() { mainWindow->OnCoffeeMugOffered(); });
+    if (window->coffeeMugWindow_) {
+        window->coffeeMugWindow_->Show();
+    } else {
+        core::Logger::Warn("Coffee mug item unavailable; continuing without it");
+    }
 
     window->trayIcon_ = TrayIcon::Create(
         hwnd, kTrayIconMessage, std::filesystem::path(SVETA_CONTENT_DIR) / L"face.png", L"Sveta Assistant");
@@ -452,7 +468,7 @@ void MainWindow::StartProactiveSpeech(const std::wstring& situationDescription) 
         return;
     }
 
-    core::Logger::Info("Proactive speech triggered (same error repeated)");
+    core::Logger::Info("Proactive speech triggered");
 
     const auto now = std::chrono::steady_clock::now();
     characterState_.OnConversationStart(now);
@@ -473,6 +489,20 @@ void MainWindow::StartProactiveSpeech(const std::wstring& situationDescription) 
     }
     requestHistory.insert(requestHistory.end(), conversationHistory_.begin(), conversationHistory_.end());
     SendChatRequestAsync(std::move(requestHistory));
+}
+
+void MainWindow::OnCoffeeMugOffered() {
+    const auto now = std::chrono::steady_clock::now();
+    characterState_.OnItemOffered(now);
+    SyncSpriteToEmotion();
+
+    // No kProactiveCooldown gating here (unlike the same-error-repeated
+    // trigger): this is a deliberate, explicit user action, so every offer
+    // should get a reaction, throttled only by StartProactiveSpeech's own
+    // already-conversing / AI-not-configured guards.
+    StartProactiveSpeech(
+        L"사용자가 방금 커피 머그컵을 당신에게 건넸어요. 당신은 커피를 좋아해요. "
+        L"이 상황에 대해 짧고 자연스럽게, 다정한 말투로 반응해주세요.");
 }
 
 void MainWindow::OnAiResponse(const AiResponsePayload& payload) {
@@ -570,6 +600,10 @@ void MainWindow::ShowTrayMenu() {
     const HMENU menu = CreatePopupMenu();
     AppendMenuW(menu, MF_STRING, kMenuIdSettings, L"설정");
     AppendMenuW(menu, MF_STRING, kMenuIdTogglePause, isPaused_ ? L"다시 보이기" : L"일시정지");
+#ifndef NDEBUG
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, kMenuIdDebugOfferMug, L"디버그: 머그컵 제공");
+#endif
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kMenuIdExit, L"종료");
 
@@ -756,6 +790,11 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
                 case kMenuIdSettings:
                     OpenSettings();
                     return 0;
+#ifndef NDEBUG
+                case kMenuIdDebugOfferMug:
+                    OnCoffeeMugOffered();
+                    return 0;
+#endif
                 case kMenuIdExit:
                     DestroyWindow(hwnd_);
                     return 0;
@@ -783,6 +822,9 @@ LRESULT MainWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam) {
             KillTimer(hwnd_, kCharacterTickTimerId);
             KillTimer(hwnd_, kMouthAnimationTimerId);
             SaveCurrentPosition();
+            if (coffeeMugWindow_) {
+                coffeeMugWindow_->SaveCurrentPosition();
+            }
             if (memoryEngine_) {
                 memoryEngine_->Save();
             }

@@ -85,11 +85,16 @@ std::wstring StripMarkdown(const std::wstring& text) {
 
     // Fenced code blocks: drop the ``` fence lines, keep the code text.
     result = std::regex_replace(result, std::wregex(L"```[^\n]*\n?"), L"");
-    // Inline code, bold, italic: keep the inner text, drop the markers.
+    // Inline code, bold: keep the inner text, drop the markers.
     result = std::regex_replace(result, std::wregex(L"`([^`]*)`"), L"$1");
     result = std::regex_replace(result, std::wregex(L"\\*\\*([^*]*)\\*\\*"), L"$1");
     result = std::regex_replace(result, std::wregex(L"__([^_]*)__"), L"$1");
-    result = std::regex_replace(result, std::wregex(L"\\*([^*]*)\\*"), L"$1");
+    // Single-asterisk spans are this persona's roleplay action/stage
+    // direction convention (e.g. "*조심스럽게 한 모금 마시며*"), not markdown
+    // italics -- drop the whole span (markers AND text) so TTS doesn't
+    // narrate the character's actions out loud. Must run after the
+    // double-asterisk pass above so "**bold**" isn't consumed by this first.
+    result = std::regex_replace(result, std::wregex(L"\\*([^*]*)\\*"), L"");
     // Links: keep the link text, drop the URL.
     result = std::regex_replace(result, std::wregex(L"\\[([^\\]]*)\\]\\([^)]*\\)"), L"$1");
     // Headers, blockquotes, list bullets at the start of a line.

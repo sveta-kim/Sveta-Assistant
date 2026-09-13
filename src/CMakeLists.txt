@@ -30,6 +30,7 @@ add_executable(SvetaAssistant WIN32
     core/StringConvert.cpp
     interaction/HeadHitbox.cpp
     interaction/PettingDetector.cpp
+    items/ItemWindow.cpp
     memory/DailyMemory.cpp
     memory/LongTermMemory.cpp
     memory/MemoryEngine.cpp

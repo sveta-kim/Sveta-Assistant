@@ -17,6 +17,11 @@ public:
     explicit CharacterState(Personality personality = Personality::Sveta());
 
     void OnPetted(std::chrono::steady_clock::time_point now);
+    // User dragged an item (the coffee mug) onto the character (project
+    // plan section 9, scoped to a single item for now). Sveta likes
+    // coffee -- hardcoded for this single-character, single-item MVP; no
+    // Personality field needed.
+    void OnItemOffered(std::chrono::steady_clock::time_point now);
     void OnHoverStart(std::chrono::steady_clock::time_point now);
     void OnHoverEnd();
     void OnDragStart(std::chrono::steady_clock::time_point now);
