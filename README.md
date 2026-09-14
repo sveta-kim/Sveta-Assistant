@@ -300,6 +300,12 @@ gcloud resource-manager org-policies disable-enforce \
   웨이브 대시 등)도 추가했다 — TTS가 이걸 "물결표"라고 그대로 읽던
   문제. 다만 통째로 지우면 "3~5개"가 "35개"로 붙어버려서, 지우는 대신
   공백으로 치환한다
+- *구현 메모: `*조심스럽게 한 모금 마시며*` 같은 단일 별표 구간을 원래
+  마크다운 이탤릭으로 취급해서 별표만 떼고 내용은 그대로 읽어줬는데,
+  이건 이탤릭이 아니라 페르소나가 쓰는 행동 묘사(연기 지문) 표기라
+  소리 내면 안 되는 부분이었다. TTS용 텍스트에서는 이제 그 구간을
+  통째로(별표+내용) 제거한다 — 말풍선 표시 텍스트와 `**진짜 강조**`
+  같은 굵게 표기는 그대로 영향 없음*
 - GDI+ `Bitmap`이 외부에서 감싼 premultiplied 메모리에 직접
   `FillRectangle`을 그리면 에러 없이 조용히 무시된다 — 별도의 GDI+ 소유
   비트맵에 그린 뒤 `LockBits`로 수동 알파 합성하는 방식으로 우회
@@ -397,7 +403,11 @@ gcloud resource-manager org-policies disable-enforce \
    실제로는 "산나비(SANABI)" 게임 자체의 실행 파일(`SNB.exe`)이었다 —
    Steam 라이브러리 스캔이 정상적으로 게임으로 잡아낸 것이었지 오탐이
    아니었다. 낯선 프로세스명만 보고 바로 제외 목록에 넣기 전에 실제
-   경로를 확인해야 한다는 교훈*
+   경로를 확인해야 한다는 교훈*. *실제 오탐 사례도 하나 있었다: 화면
+   캡처(Win+Shift+S)를 실행하면 영역 선택 오버레이가 모니터 전체를
+   덮는데, 이게 진짜로 이 휴리스틱에 걸려서 게임으로 오인식됐다 —
+   `SnippingTool.exe`/`ScreenClippingHost.exe`를 기본 제외 목록에 추가해서
+   고쳤다*
 
 **게임 중 캐릭터 행동**: `character/Action::PlayingGame` + `Emotion::Excited`로
 표시되고, 전용 스프라이트 `playing_game.png`(calm.png 위에 게임패드 아이콘
