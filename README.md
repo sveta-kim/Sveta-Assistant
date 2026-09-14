@@ -27,7 +27,7 @@ Windows Desktop AI Companion — 화면 위에 상주하며 사용자를 바라�
 
 ## 진행 상황
 
-기획서 52장 로드맵(Phase 0~13) 기준. Phase 8까지 완료했고, Phase 6 위에
+기획서 52장 로드맵(Phase 0~13) 기준. Phase 9까지 진행했고, Phase 6 위에
 정식 Phase는 아닌 확장(게임 인식/반응, 리그 오브 레전드 연동)도 얹었다.
 
 | Phase | 내용 | 상태 |
